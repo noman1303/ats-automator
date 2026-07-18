@@ -873,7 +873,7 @@ if generate:
                 "'Re-parse resume' if the profile cache is corrupted.")
 
 st.markdown("---")
-st.caption(f"⚡ ATS Resume Automator {APP_VERSION}  ·  Developed by **{APP_AUTHOR}**")"""
+st.caption(f"⚡ ATS Resume Automator {APP_VERSION}  ·  Developed by **{APP_AUTHOR}**")
 =====================================================================
  ADVANCED ATS RESUME AUTOMATOR  v3 — MULTI-KEY + MULTI-PROVIDER FAILOVER
  (Streamlit + OpenAI-compatible APIs + python-docx)
