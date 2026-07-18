@@ -825,12 +825,13 @@ with st.sidebar:
                    "hosted deployment — the server has no access to your PC's C:\\ drive, "
                    "and pasting a web URL here will not work either since this reads local "
                    "files, not web pages. Use the uploader above instead on Streamlit Cloud.")
-        default_key_file = st.session_state.get("gemini_key_file_path", r"C:\noman\gemini_keys.txt")
         gemini_key_file_path = st.text_input(
             "Gemini keys file (.txt, one key per line)",
-            value=default_key_file,
-            placeholder=r"C:\noman\gemini_keys.txt",
+            value="",
+            placeholder=r"e.g. C:\Users\YourName\gemini_keys.txt",
             key="gemini_key_file_path",
+            help="Type or paste the FULL path to your own keys file on this computer — "
+                 "everyone's path will be different, so nothing is pre-filled here.",
         )
         reload_clicked = st.button("🔄 Reload keys from local path", use_container_width=True)
         if reload_clicked:
