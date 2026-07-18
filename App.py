@@ -3,8 +3,6 @@
  ADVANCED ATS RESUME AUTOMATOR  v3 — MULTI-KEY + MULTI-PROVIDER FAILOVER
  (Streamlit + OpenAI-compatible APIs + python-docx)
 =====================================================================
- Developed by Noman Belim
-=====================================================================
  WHAT'S NEW IN v3
  - MULTI-KEY GEMINI POOL: paste ALL your Gemini API keys (one per
    line) into a text file (e.g. gemini_keys.txt). The app loads them
@@ -52,12 +50,6 @@ from openai import OpenAI
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
-
-# ---------------------------------------------------------------
-# APP METADATA / CREDIT
-# ---------------------------------------------------------------
-APP_AUTHOR = "Noman Belim"
-APP_VERSION = "v3"
 
 # ---------------------------------------------------------------
 # CANDIDATE PATH PICKER — add your own saved candidates here.
@@ -650,7 +642,6 @@ st.title("⚡ ATS Resume Automator")
 st.caption("Paste a JD → get a tailored, ATS-clean resume in seconds. "
            "Job titles, companies, dates & education are never changed. No fake facts. "
            "Multi-key Gemini pool + multi-provider automatic failover.")
-st.caption(f"👨‍💻 Developed by **{APP_AUTHOR}**  ·  {APP_VERSION}")
 
 with st.sidebar:
     st.header("① One-time Setup")
@@ -744,10 +735,6 @@ with st.sidebar:
                 st.markdown(f"- Gemini key `{gemini_key_short(raw_key)}` — {mins} min")
             else:
                 st.markdown(f"- {label_by_id.get(key, key)} — {mins} min")
-
-    # ---------- Footer credit ----------
-    st.markdown("---")
-    st.caption(f"⚡ ATS Resume Automator {APP_VERSION}  \nDeveloped by **{APP_AUTHOR}**")
 
 st.header("② Paste the Job Description")
 jd_text = st.text_area("Job Description", height=280,
@@ -871,6 +858,3 @@ if generate:
         st.info("Common fixes: add more keys to your Gemini key file, check your API keys, "
                 "add another provider key in the sidebar, check internet, or tick "
                 "'Re-parse resume' if the profile cache is corrupted.")
-
-st.markdown("---")
-st.caption(f"⚡ ATS Resume Automator {APP_VERSION}  ·  Developed by **{APP_AUTHOR}**")
