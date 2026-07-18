@@ -3,6 +3,8 @@
  ADVANCED ATS RESUME AUTOMATOR  v3 — MULTI-KEY + MULTI-PROVIDER FAILOVER
  (Streamlit + OpenAI-compatible APIs + python-docx)
 =====================================================================
+ Developed by Noman Belim
+=====================================================================
  WHAT'S NEW IN v3
  - MULTI-KEY GEMINI POOL: paste ALL your Gemini API keys (one per
    line) into a text file (e.g. gemini_keys.txt). The app loads them
@@ -50,6 +52,12 @@ from openai import OpenAI
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+
+# ---------------------------------------------------------------
+# APP METADATA / CREDIT
+# ---------------------------------------------------------------
+APP_AUTHOR = "Noman Belim"
+APP_VERSION = "v3"
 
 # ---------------------------------------------------------------
 # CANDIDATE PATH PICKER — add your own saved candidates here.
@@ -111,6 +119,122 @@ MODEL_GONE_MARKERS = ("404", "not found", "no longer available", "deprecated",
                       "decommissioned", "does not exist", "invalid model")
 
 st.set_page_config(page_title="ATS Resume Automator", page_icon="⚡", layout="wide")
+
+# ---------------------------------------------------------------
+# GLOBAL THEME — "Aurora Violet"
+# Dark canvas + violet→pink gradient accents (matches the credit
+# badge palette). Paired with .streamlit/config.toml for native
+# widget colors (buttons, sliders, checkboxes, focus rings).
+# ---------------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    /* ---------- page canvas ---------- */
+    .stApp {
+        background:
+            radial-gradient(circle at 15% -10%, rgba(139,92,246,0.16), transparent 45%),
+            radial-gradient(circle at 85% 110%, rgba(236,72,153,0.14), transparent 45%),
+            #0e0e17;
+    }
+
+    /* ---------- sidebar ---------- */
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #14141f 0%, #191927 100%);
+        border-right: 1px solid rgba(139,92,246,0.18);
+    }
+
+    /* ---------- headings ---------- */
+    h1 {
+        background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 40%, #ec4899 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-weight: 800 !important;
+    }
+    h2 {
+        color: #c4b5fd !important;
+        font-weight: 700 !important;
+        border-left: 4px solid #8b5cf6;
+        padding-left: 10px;
+    }
+    h3 {
+        color: #e9d5ff !important;
+        font-weight: 650 !important;
+    }
+
+    /* ---------- buttons ---------- */
+    .stButton > button, .stDownloadButton > button {
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        border: 1px solid rgba(139,92,246,0.35) !important;
+        transition: all 0.18s ease !important;
+    }
+    .stButton > button:hover, .stDownloadButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(139,92,246,0.35);
+        border-color: #ec4899 !important;
+    }
+    button[kind="primary"] {
+        background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 45%, #ec4899 100%) !important;
+        box-shadow: 0 3px 14px rgba(139,92,246,0.4) !important;
+    }
+
+    /* ---------- inputs ---------- */
+    .stTextInput input, .stTextArea textarea {
+        border-radius: 8px !important;
+        border: 1px solid rgba(139,92,246,0.3) !important;
+    }
+    .stTextInput input:focus, .stTextArea textarea:focus {
+        border-color: #ec4899 !important;
+        box-shadow: 0 0 0 2px rgba(236,72,153,0.22) !important;
+    }
+
+    /* ---------- expanders ---------- */
+    [data-testid="stExpander"] {
+        border: 1px solid rgba(139,92,246,0.22) !important;
+        border-radius: 12px !important;
+        background: rgba(139,92,246,0.05) !important;
+        overflow: hidden;
+    }
+
+    /* ---------- metrics ---------- */
+    [data-testid="stMetric"] {
+        background: linear-gradient(135deg, rgba(139,92,246,0.12), rgba(236,72,153,0.10));
+        border: 1px solid rgba(139,92,246,0.3);
+        border-radius: 14px;
+        padding: 14px 16px;
+    }
+
+    /* ---------- alerts (success / error / warning / info) ---------- */
+    [data-testid="stAlert"] {
+        border-radius: 10px !important;
+    }
+
+    /* ---------- dividers ---------- */
+    hr {
+        border: none !important;
+        height: 1px !important;
+        background: linear-gradient(90deg, transparent, rgba(139,92,246,0.5), transparent) !important;
+        margin: 1.3rem 0 !important;
+    }
+
+    /* ---------- status widget ---------- */
+    [data-testid="stStatusWidget"] {
+        border-radius: 12px !important;
+        border: 1px solid rgba(139,92,246,0.25) !important;
+    }
+
+    /* ---------- scrollbar ---------- */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #14141f; }
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, #8b5cf6, #ec4899);
+        border-radius: 10px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # ---------------------------------------------------------------
@@ -642,6 +766,22 @@ st.title("⚡ ATS Resume Automator")
 st.caption("Paste a JD → get a tailored, ATS-clean resume in seconds. "
            "Job titles, companies, dates & education are never changed. No fake facts. "
            "Multi-key Gemini pool + multi-provider automatic failover.")
+st.markdown(
+    f"""
+    <div style="
+        display:inline-flex; align-items:center; gap:8px;
+        background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%);
+        color:#ffffff; padding:6px 16px; border-radius:999px;
+        font-size:13px; font-weight:600; margin:2px 0 14px 0;
+        box-shadow:0 3px 10px rgba(139,92,246,0.35);
+        letter-spacing:0.2px;">
+        <span>👨‍💻</span>
+        <span>Developed by {APP_AUTHOR}</span>
+        <span style="opacity:0.8; font-weight:500;">· {APP_VERSION}</span>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 with st.sidebar:
     st.header("① One-time Setup")
@@ -735,6 +875,31 @@ with st.sidebar:
                 st.markdown(f"- Gemini key `{gemini_key_short(raw_key)}` — {mins} min")
             else:
                 st.markdown(f"- {label_by_id.get(key, key)} — {mins} min")
+
+    # ---------- Footer credit ----------
+    st.markdown("---")
+    st.markdown(
+        f"""
+        <div style="
+            text-align:center; padding:14px 10px; margin-top:4px;
+            border-radius:14px;
+            background:linear-gradient(135deg,rgba(99,102,241,0.15),rgba(236,72,153,0.15));
+            border:1px solid rgba(139,92,246,0.35);">
+            <div style="font-size:20px; margin-bottom:2px;">⚡</div>
+            <div style="font-size:11px; letter-spacing:1px; opacity:0.7; text-transform:uppercase;">
+                ATS Resume Automator {APP_VERSION}
+            </div>
+            <div style="
+                font-size:15px; font-weight:800; margin-top:4px;
+                background:linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899);
+                -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+                background-clip:text;">
+                Developed by {APP_AUTHOR}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 st.header("② Paste the Job Description")
 jd_text = st.text_area("Job Description", height=280,
@@ -858,3 +1023,26 @@ if generate:
         st.info("Common fixes: add more keys to your Gemini key file, check your API keys, "
                 "add another provider key in the sidebar, check internet, or tick "
                 "'Re-parse resume' if the profile cache is corrupted.")
+
+st.markdown("---")
+st.markdown(
+    f"""
+    <div style="
+        text-align:center; padding:22px 10px 8px 10px;">
+        <div style="font-size:13px; opacity:0.65;">
+            ⚡ <strong>ATS Resume Automator</strong> &nbsp;{APP_VERSION}
+        </div>
+        <div style="font-size:17px; margin-top:6px; font-weight:500;">
+            Crafted with <span style="color:#ec4899;">♥</span> by
+            <span style="
+                font-weight:800; font-size:19px; margin-left:3px;
+                background:linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899);
+                -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+                background-clip:text;">
+                {APP_AUTHOR}
+            </span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
