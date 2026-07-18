@@ -238,19 +238,17 @@ st.markdown(
 
 
 # ---------------------------------------------------------------
-# 0. GEMINI KEY-FILE LOADER
-#    Reads one API key per line from a plain text file. Blank
-#    lines and lines starting with # are ignored so you can leave
-#    yourself notes next to each key.
+# 0. GEMINI KEY LOADER
+#    Reads one API key per line from either an uploaded .txt file
+#    (works everywhere, including Streamlit Cloud) or a local file
+#    path (only works when the app runs on your own computer).
+#    Blank lines and lines starting with # are ignored so you can
+#    leave yourself notes next to each key.
 # ---------------------------------------------------------------
-def load_keys_from_file(file_path: str) -> list[str]:
-    """Return a de-duplicated, ordered list of keys from a text file."""
-    p = Path(file_path.strip().strip('"'))
-    if not p.exists():
-        raise FileNotFoundError(f"Key file not found: {p}")
-    lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
+def parse_keys_text(text: str) -> list[str]:
+    """Return a de-duplicated, ordered list of keys from raw text (one per line)."""
     keys, seen = [], set()
-    for line in lines:
+    for line in text.splitlines():
         key = line.strip()
         if not key or key.startswith("#"):
             continue
@@ -258,6 +256,20 @@ def load_keys_from_file(file_path: str) -> list[str]:
             seen.add(key)
             keys.append(key)
     return keys
+
+
+def load_keys_from_file(file_path: str) -> list[str]:
+    """
+    Return a de-duplicated, ordered list of keys from a LOCAL text file.
+    NOTE: this only works when Streamlit is running on the same machine
+    where the file lives. On Streamlit Cloud (or any hosted deployment)
+    the app runs on a remote server that has no access to your PC's
+    C:\\ drive or to a URL you paste in — use the file uploader instead.
+    """
+    p = Path(file_path.strip().strip('"'))
+    if not p.exists():
+        raise FileNotFoundError(f"Key file not found: {p}")
+    return parse_keys_text(p.read_text(encoding="utf-8", errors="ignore"))
 
 
 def gemini_key_short(key: str) -> str:
@@ -788,39 +800,57 @@ with st.sidebar:
 
     # ---------- Gemini multi-key pool ----------
     st.subheader("🔑 Gemini key pool (recommended)")
-    st.caption("Paste ALL your Gemini API keys into a plain .txt file, one per line. "
+    st.caption("Upload a plain .txt file with ALL your Gemini API keys, one per line. "
                "The app rotates through them automatically when one gets rate-limited.")
-    default_key_file = st.session_state.get("gemini_key_file_path", r"C:\noman\gemini_keys.txt")
-    gemini_key_file_path = st.text_input(
-        "Gemini keys file (.txt, one key per line)",
-        value=default_key_file,
-        placeholder=r"C:\noman\gemini_keys.txt",
-        key="gemini_key_file_path",
+
+    uploaded_keys_file = st.file_uploader(
+        "Upload Gemini keys file (.txt)",
+        type=["txt"],
+        key="gemini_keys_uploader",
+        help="One API key per line. Blank lines and lines starting with # are ignored.",
     )
 
-    reload_col, status_col = st.columns([1, 2])
-    with reload_col:
-        reload_clicked = st.button("🔄 Reload keys from file", use_container_width=True)
-
-    if reload_clicked or "gemini_key_pool" not in st.session_state:
+    if uploaded_keys_file is not None:
         try:
-            loaded = load_keys_from_file(gemini_key_file_path) if gemini_key_file_path.strip() else []
-            st.session_state["gemini_key_pool"] = loaded
+            content = uploaded_keys_file.getvalue().decode("utf-8", errors="ignore")
+            st.session_state["gemini_key_pool"] = parse_keys_text(content)
             st.session_state["gemini_key_pool_error"] = None
         except Exception as e:                        # noqa: BLE001
             st.session_state["gemini_key_pool"] = []
             st.session_state["gemini_key_pool_error"] = str(e)
 
+    with st.expander("Advanced: load from a local file path instead"):
+        st.caption("⚠️ This only works when you run the app on your own computer "
+                   "(`streamlit run app.py`). It will NOT work on Streamlit Cloud or any "
+                   "hosted deployment — the server has no access to your PC's C:\\ drive, "
+                   "and pasting a web URL here will not work either since this reads local "
+                   "files, not web pages. Use the uploader above instead on Streamlit Cloud.")
+        default_key_file = st.session_state.get("gemini_key_file_path", r"C:\noman\gemini_keys.txt")
+        gemini_key_file_path = st.text_input(
+            "Gemini keys file (.txt, one key per line)",
+            value=default_key_file,
+            placeholder=r"C:\noman\gemini_keys.txt",
+            key="gemini_key_file_path",
+        )
+        reload_clicked = st.button("🔄 Reload keys from local path", use_container_width=True)
+        if reload_clicked:
+            try:
+                loaded = load_keys_from_file(gemini_key_file_path) if gemini_key_file_path.strip() else []
+                st.session_state["gemini_key_pool"] = loaded
+                st.session_state["gemini_key_pool_error"] = None
+            except Exception as e:                        # noqa: BLE001
+                st.session_state["gemini_key_pool"] = []
+                st.session_state["gemini_key_pool_error"] = str(e)
+
     gemini_key_pool = st.session_state.get("gemini_key_pool", [])
     pool_error = st.session_state.get("gemini_key_pool_error")
 
-    with status_col:
-        if pool_error:
-            st.error(f"Couldn't read key file: {pool_error}")
-        elif gemini_key_pool:
-            st.success(f"Loaded {len(gemini_key_pool)} Gemini key(s) from file.")
-        else:
-            st.warning("No keys loaded yet — enter a file path above.")
+    if pool_error:
+        st.error(f"Couldn't read key file: {pool_error}")
+    elif gemini_key_pool:
+        st.success(f"Loaded {len(gemini_key_pool)} Gemini key(s).")
+    else:
+        st.warning("No keys loaded yet — upload a .txt file above.")
 
     if gemini_key_pool:
         with st.expander(f"Show loaded keys (masked) — {len(gemini_key_pool)} total"):
