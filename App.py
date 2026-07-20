@@ -15,7 +15,7 @@
    OpenRouter) as single-key fallbacks after the Gemini pool is
    exhausted.
  - Everything else (8-stage tailoring, locked facts, ATS docx,
-   Tailored_Resumes folder, code-level keyword coverage) is
+   output/ folder, code-level keyword coverage) is
    unchanged from v2.
 
  HOW TO USE THE KEY FILE:
@@ -904,34 +904,14 @@ with st.sidebar:
     st.subheader("👤 Candidate")
 
     st.markdown(
-        "**On Streamlit Cloud?** Typed file paths (like `C:\\...`) only exist on "
-        "*your own* computer — the cloud server can't see them. Upload the file "
-        "instead using the box below. If you're running this locally on your own "
-        "PC, the saved-path picker underneath still works fine."
+        "Upload the candidate's resume below — this works both locally and on "
+        "Streamlit Cloud."
     )
     uploaded_resume_file = st.file_uploader(
-        "📤 Upload resume (required on Streamlit Cloud; optional if running locally)",
+        "📤 Upload resume",
         type=["docx", "pdf"],
         key="resume_uploader",
     )
-
-    candidate_options = list(SAVED_CANDIDATES.keys()) + [CUSTOM_PATH_LABEL]
-    candidate_choice = st.selectbox("Saved candidates", candidate_options, index=0)
-
-    if candidate_choice == CUSTOM_PATH_LABEL:
-        resume_input = st.text_input(
-            "Original resume path",
-            value="",
-            placeholder=r"C:\noman\Bethlehem_Lulseged_Resume.pdf",
-            help="Full path to the candidate's original .docx or .pdf "
-                 "(only works when running the app locally, not on Streamlit Cloud)")
-    else:
-        resume_input = st.text_input(
-            "Original resume path",
-            value=SAVED_CANDIDATES[candidate_choice],
-            help="Full path to the candidate's original .docx or .pdf "
-                 "(editable — this is just pre-filled from your saved list; "
-                 "only works when running the app locally, not on Streamlit Cloud)")
 
     force_reparse = st.checkbox("Re-parse resume (use if you edited the original)", value=False)
 
@@ -988,56 +968,22 @@ if generate:
         st.error("Please load a Gemini keys file OR enter at least one manual provider key "
                  "in the sidebar.")
         st.stop()
-    def clean_path_str(raw: str) -> str:
-        """Normalize a pasted path: strip straight/smart quotes, stray
-        whitespace (including non-breaking spaces), and surrounding junk
-        that copy-paste from Explorer/chat apps sometimes introduces."""
-        if not raw:
-            return ""
-        s = raw.strip()
-        # normalize non-breaking / odd unicode spaces to regular spaces
-        s = s.replace("\u00a0", " ").replace("\u200b", "")
-        # strip straight quotes
-        s = s.strip().strip('"').strip("'")
-        # strip smart/curly quotes some apps auto-insert
-        s = s.strip("\u201c\u201d\u2018\u2019")
-        return s.strip()
 
-    resume_path_str = clean_path_str(resume_input)
-
-    if uploaded_resume_file is not None:
-        # Save the uploaded bytes to a temp file so the rest of the pipeline
-        # (which expects a real filesystem Path) works unchanged — this is
-        # what makes the app work on Streamlit Cloud, not just locally.
-        tmp_dir = Path(tempfile.gettempdir()) / "ats_resume_uploads"
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-        upload_name = Path(uploaded_resume_file.name).name  # strip any path junk
-        resume_path = tmp_dir / upload_name
-        with open(resume_path, "wb") as f:
-            f.write(uploaded_resume_file.getbuffer())
-        resume_path_str = str(resume_path)
-        st.caption(f"🔎 Using uploaded file: `{upload_name}`")
-    else:
-        resume_path = Path(resume_path_str) if resume_path_str else None
-        st.caption(f"🔎 Checking path: `{resume_path_str}`" if resume_path_str else "🔎 No path entered yet.")
-
-    if not resume_path_str or not resume_path.exists():
-        st.error("Resume path not found. Paste the FULL path, e.g. C:\\noman\\resume.pdf "
-                 "— or upload the file using the box in the sidebar instead.")
-        if resume_path_str:
-            st.info(
-                f"Tried to open: `{resume_path_str}`\n\n"
-                "Common causes:\n"
-                "- **Running on Streamlit Cloud?** Typed paths never work there — "
-                "use the **Upload resume** box in the sidebar instead.\n"
-                "- The **Saved candidates** dropdown above is still on a saved name — "
-                "make sure it's set to **\"— Custom / one-off path —\"** if you're using a new path.\n"
-                "- Extra spaces or invisible characters got pasted in (e.g. from a chat app).\n"
-                "- A typo in the folder/file name, or the file's actual extension differs "
-                "(check it isn't secretly `.docx.docx` or missing the extension).\n"
-                "- The file is on a network drive / OneDrive path that isn't synced locally."
-            )
+    if uploaded_resume_file is None:
+        st.error("Please upload a resume file (.docx or .pdf) in the sidebar.")
         st.stop()
+
+    # Save the uploaded bytes to a temp file so the rest of the pipeline
+    # (which expects a real filesystem Path) works unchanged — this is
+    # what makes the app work on Streamlit Cloud, not just locally.
+    tmp_dir = Path(tempfile.gettempdir()) / "ats_resume_uploads"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    upload_name = Path(uploaded_resume_file.name).name  # strip any path junk
+    resume_path = tmp_dir / upload_name
+    with open(resume_path, "wb") as f:
+        f.write(uploaded_resume_file.getbuffer())
+    st.caption(f"🔎 Using uploaded file: `{upload_name}`")
+
     if len(jd_text.strip()) < 100:
         st.error("That JD looks too short — paste the full job description.")
         st.stop()
@@ -1070,7 +1016,7 @@ if generate:
             company_for_jd = tailored.get("company_detected", "Company") or "Company"
             company_folder = safe_filename(company_for_jd) or "Company"
 
-            out_dir = resume_path.parent / "Tailored_Resumes" / company_folder
+            out_dir = Path("output") / company_folder
             out_path = out_dir / fname
 
             build_docx(tailored, out_path)
@@ -1079,7 +1025,12 @@ if generate:
 
         job_title = tailored.get("job_title_detected", "Role")
         company = tailored.get("company_detected", "Company")
-        st.success(f"**Saved:** `{out_path}`  \n📁 Company folder: **{company_folder}**")
+        st.success(
+            f"**Generated:** `{out_path}` (inside the app's own `output/` folder — "
+            f"on Streamlit Cloud this isn't a folder you can browse to, so use the "
+            f"**Download** button below to get the file)  \n"
+            f"📁 Company folder: **{company_folder}**"
+        )
 
         col1, col2, col3 = st.columns([2, 1, 2])
         with col1:
