@@ -72,6 +72,9 @@ import re
 import json
 import time
 import tempfile
+import io
+import zipfile
+import base64
 from pathlib import Path
 from datetime import datetime
 
@@ -1025,24 +1028,56 @@ if generate:
 
         job_title = tailored.get("job_title_detected", "Role")
         company = tailored.get("company_detected", "Company")
+
+        # ---- Package as a zip so the downloaded item unpacks into a
+        # ---- folder named after the company (browsers can't save a
+        # ---- single download "into" a folder directly — zip is the
+        # ---- standard workaround for that). ----
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(out_path, arcname=f"{company_folder}/{fname}")
+        zip_bytes = zip_buffer.getvalue()
+        zip_filename = f"{company_folder}.zip"
+
         st.success(
-            f"**Generated:** `{out_path}` (inside the app's own `output/` folder — "
-            f"on Streamlit Cloud this isn't a folder you can browse to, so use the "
-            f"**Download** button below to get the file)  \n"
+            f"**Generated:** `{out_path}` — packaged into **{zip_filename}**, which "
+            f"unzips into a **{company_folder}/** folder containing the resume.  \n"
             f"📁 Company folder: **{company_folder}**"
+        )
+
+        # ---- Attempt an automatic download (no click needed). Most
+        # ---- browsers allow this since it's triggered right after a
+        # ---- direct button click (Generate), but some may still block
+        # ---- it once per site the first time — the manual button
+        # ---- below always works as a fallback either way. ----
+        b64_zip = base64.b64encode(zip_bytes).decode()
+        auto_dl_id = f"autodl_{int(time.time() * 1000)}"
+        st.components.v1.html(
+            f"""
+            <a id="{auto_dl_id}" href="data:application/zip;base64,{b64_zip}"
+               download="{zip_filename}" style="display:none;"></a>
+            <script>
+                document.getElementById("{auto_dl_id}").click();
+            </script>
+            """,
+            height=0,
+            width=0,
         )
 
         col1, col2, col3 = st.columns([2, 1, 2])
         with col1:
             st.subheader("🎯 Detected Role")
             st.write(f"**{job_title}** at **{company}**")
-            with open(out_path, "rb") as f:
-                st.download_button(
-                    "⬇️ Download Resume",
-                    f,
-                    file_name=fname,
-                    use_container_width=True,
-                )
+            st.download_button(
+                f"⬇️ Download {zip_filename} (folder: {company_folder}/)",
+                zip_bytes,
+                file_name=zip_filename,
+                mime="application/zip",
+                use_container_width=True,
+            )
+            st.caption("If the download didn't start automatically, use the button above. "
+                       "Unzip it and you'll get a folder named after the company with the "
+                       "resume inside.")
         with col2:
             st.subheader("📊 Coverage")
             st.metric("JD keywords (code-calculated)", f"{coverage_pct}%",
