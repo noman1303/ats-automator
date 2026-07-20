@@ -36,34 +36,7 @@
    5. Add more keys any time by editing the .txt file and clicking
       "🔄 Reload keys from file" in the sidebar (no restart needed).
 
- =====================================================================
- HOW TO RUN THIS APP (Windows) — copy-paste these, in order
- =====================================================================
- 1) Open Command Prompt.
-
- 2) Go to the folder where this file lives:
-        cd D:\\Noman
-
- 3) (One-time / whenever packages need installing or updating)
-    If plain "pip" isn't recognized, use "python -m pip" instead:
-        python -m pip install streamlit openai python-docx
-
- 4) Run the app.
-    If plain "streamlit" isn't recognized (common when Python isn't
-    fully added to PATH), run it as a module instead — this always
-    works as long as "python" itself works:
-        python -m streamlit run app.py
-
- 5) It opens in your browser automatically at something like:
-        http://localhost:8501
-
- 6) To stop the app: click back into the Command Prompt window and
-    press Ctrl + C.
-
- TROUBLESHOOTING QUICK REFERENCE:
-   - "'pip' is not recognized"       -> use: python -m pip install ...
-   - "'streamlit' is not recognized" -> use: python -m streamlit run app.py
-   - Check Python is installed at all -> python --version
+ RUN IT:   streamlit run app.py
 =====================================================================
 """
 
@@ -972,43 +945,14 @@ if generate:
         st.error("Please load a Gemini keys file OR enter at least one manual provider key "
                  "in the sidebar.")
         st.stop()
-    def clean_path_str(raw: str) -> str:
-        """Normalize a pasted path: strip straight/smart quotes, stray
-        whitespace (including non-breaking spaces), and surrounding junk
-        that copy-paste from Explorer/chat apps sometimes introduces."""
-        if not raw:
-            return ""
-        s = raw.strip()
-        # normalize non-breaking / odd unicode spaces to regular spaces
-        s = s.replace("\u00a0", " ").replace("\u200b", "")
-        # strip straight quotes
-        s = s.strip().strip('"').strip("'")
-        # strip smart/curly quotes some apps auto-insert
-        s = s.strip("\u201c\u201d\u2018\u2019")
-        return s.strip()
-
-    resume_path_str = clean_path_str(resume_input)
-    resume_path = Path(resume_path_str) if resume_path_str else None
-
-    st.caption(f"🔎 Checking path: `{resume_path_str}`" if resume_path_str else "🔎 No path entered yet.")
-
-    if not resume_path_str or not resume_path.exists():
+    if not resume_input or not Path(resume_input.strip().strip('"')).exists():
         st.error("Resume path not found. Paste the FULL path, e.g. C:\\noman\\resume.pdf")
-        if resume_path_str:
-            st.info(
-                f"Tried to open: `{resume_path_str}`\n\n"
-                "Common causes:\n"
-                "- The **Saved candidates** dropdown above is still on a saved name — "
-                "make sure it's set to **\"— Custom / one-off path —\"** if you're using a new path.\n"
-                "- Extra spaces or invisible characters got pasted in (e.g. from a chat app).\n"
-                "- A typo in the folder/file name, or the file's actual extension differs "
-                "(check it isn't secretly `.docx.docx` or missing the extension).\n"
-                "- The file is on a network drive / OneDrive path that isn't synced locally."
-            )
         st.stop()
     if len(jd_text.strip()) < 100:
         st.error("That JD looks too short — paste the full job description.")
         st.stop()
+
+    resume_path = Path(resume_input.strip().strip('"'))
     t0 = time.time()
 
     try:
