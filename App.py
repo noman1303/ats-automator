@@ -145,30 +145,7 @@ PROVIDERS = [
         "models": ["gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-2.5-flash"],
         "hint": "Free key: aistudio.google.com → Get API key",
     },
-    {
-        "id": "cerebras", "label": "Cerebras",
-        "base_url": "https://api.cerebras.ai/v1",
-        "models": ["gpt-oss-120b", "zai-glm-4.7"],
-        "hint": "Free key: cloud.cerebras.ai → API Keys (~1M tokens/day)",
-    },
-    {
-        "id": "groq", "label": "Groq",
-        "base_url": "https://api.groq.com/openai/v1",
-        "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
-        "hint": "Free key: console.groq.com → API Keys",
-    },
-    {
-        "id": "mistral", "label": "Mistral",
-        "base_url": "https://api.mistral.ai/v1",
-        "models": ["mistral-small-latest"],
-        "hint": "Free key: console.mistral.ai (data-training opt-in)",
-    },
-    {
-        "id": "openrouter", "label": "OpenRouter",
-        "base_url": "https://openrouter.ai/api/v1",
-        "models": ["meta-llama/llama-3.3-70b-instruct:free", "openrouter/free"],
-        "hint": "Free key: openrouter.ai → Keys (50 req/day free)",
-    },
+    
 ]
 
 GEMINI_BASE_URL = PROVIDERS[0]["base_url"]
