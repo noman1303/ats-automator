@@ -62,11 +62,11 @@
  1) Open Command Prompt.
 
  2) Go to the folder where this file lives:
-        cd D:\\Noman
+        cd D:\Noman
 
  3) (One-time / whenever packages need installing or updating)
     If plain "pip" isn't recognized, use "python -m pip" instead:
-        python -m pip install streamlit openai python-docx
+        python -m pip install streamlit openai python-docx pypdf
 
  4) Run the app.
     If plain "streamlit" isn't recognized (common when Python isn't
@@ -623,7 +623,7 @@ as the resume — never invent an employer, metric, or achievement).
 
 
 def tailor_profile(keys: dict, gemini_key_pool: list, profile: dict, jd_text: str,
-                    include_cover_letter: bool = False):
+                   include_cover_letter: bool = False):
     cover_letter_key = (
         '\n  "cover_letter": full tailored cover letter text per the cover-letter stage '
         'below, "\\n\\n"-separated paragraphs.'
@@ -640,10 +640,10 @@ def tailor_profile(keys: dict, gemini_key_pool: list, profile: dict, jd_text: st
 
 # ---------------------------------------------------------------
 # 4b. CODE-LEVEL KEYWORD COVERAGE  (replaces AI self-reported %)
-#     Extracts the highest-frequency meaningful words/phrases from
-#     the JD, then checks how many actually appear in the tailored
-#     resume text. This is deterministic and can't be "faked" by
-#     the model the way a self-reported percentage could be.
+#    Extracts the highest-frequency meaningful words/phrases from
+#    the JD, then checks how many actually appear in the tailored
+#    resume text. This is deterministic and can't be "faked" by
+#    the model the way a self-reported percentage could be.
 # ---------------------------------------------------------------
 STOPWORDS = {
     "the", "and", "a", "an", "to", "of", "in", "for", "on", "with", "as", "is",
@@ -769,714 +769,325 @@ def build_docx(profile: dict, out_path: Path):
         r = p.add_run(text)
         r.bold, r.italic = bold, italic
         r.font.size = Pt(size)
-        r.font.name = "Times New Roman"
         return r
 
-    def section_header(text):
-        p = para(before=8, after=2)
-        run(p, text.upper(), bold=True, size=10.5)
+    # 1. Name and Contact Info
+    p_name = para(align=WD_ALIGN_PARAGRAPH.CENTER, after=4)
+    run(p_name, profile.get("name", "Candidate Name").upper(), bold=True, size=22)
 
-    p = para(WD_ALIGN_PARAGRAPH.CENTER)
-    run(p, profile.get("name", ""), bold=True, size=14)
-    if profile.get("headline"):
-        p = para(WD_ALIGN_PARAGRAPH.CENTER)
-        run(p, profile["headline"], bold=True, size=10.5)
-    if profile.get("contact_line"):
-        p = para(WD_ALIGN_PARAGRAPH.CENTER, after=4)
-        run(p, profile["contact_line"])
+    p_head = para(align=WD_ALIGN_PARAGRAPH.CENTER, after=6)
+    run(p_head, profile.get("headline", ""), bold=True, size=12)
 
-    if profile.get("summary"):
-        section_header("Professional Summary")
-        p = para()
-        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        run(p, profile["summary"])
+    p_contact = para(align=WD_ALIGN_PARAGRAPH.CENTER, after=12)
+    run(p_contact, profile.get("contact_line", ""), size=10)
 
-    if profile.get("skills"):
-        section_header("Core Skills")
-        for s in profile["skills"]:
-            p = para()
-            run(p, f"{s.get('category', '')}: ", bold=True)
-            run(p, s.get("items", ""))
+    # Section Header Helper
+    def add_section_header(title):
+        p = para(before=12, after=4)
+        run(p, title.upper(), bold=True, size=11)
+        # Add a simple bottom border using underscores
+        p_border = doc.add_paragraph()
+        p_border.paragraph_format.space_before = Pt(0)
+        p_border.paragraph_format.space_after = Pt(6)
+        p_border.add_run("_" * 80).font.size = Pt(8)
 
-    if profile.get("experience"):
-        section_header("Professional Experience")
-        usable_width = section.page_width - section.left_margin - section.right_margin
-        for job in profile["experience"]:
-            p = para(before=6)
-            p.paragraph_format.tab_stops.add_tab_stop(usable_width, WD_TAB_ALIGNMENT.RIGHT)
-            run(p, f"{job.get('title', '')} — {job.get('company', '')}", bold=True)
-            run(p, "\t")
-            run(p, job.get("dates", ""), bold=True)
-            for b in job.get("bullets", []):
-                bp = doc.add_paragraph(style="List Bullet")
-                bp.paragraph_format.space_after = Pt(1)
-                bp.paragraph_format.left_indent = Inches(0.25)
-                r = bp.add_run(b)
-                r.font.size = Pt(10)
-                r.font.name = "Times New Roman"
+    # 2. Professional Summary
+    summary = profile.get("summary", "")
+    if summary:
+        add_section_header("Professional Summary")
+        p_sum = para()
+        run(p_sum, summary)
 
-    if profile.get("education"):
-        section_header("Education & Certifications")
-        for line in profile["education"]:
-            p = para()
-            if "—" in line:
-                left, right = line.split("—", 1)
-                run(p, left.strip() + " ", bold=True)
-                run(p, "— " + right.strip())
-            else:
-                run(p, line, bold=True)
+    # 3. Technical Skills
+    skills = profile.get("skills", [])
+    if skills:
+        add_section_header("Technical Skills & Core Competencies")
+        for skill_grp in skills:
+            p_skill = para()
+            run(p_skill, skill_grp.get("category", "") + ": ", bold=True)
+            run(p_skill, skill_grp.get("items", ""))
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(out_path))
+    # 4. Professional Experience
+    experience = profile.get("experience", [])
+    if experience:
+        add_section_header("Professional Experience")
+        for job in experience:
+            p_job = para(before=6, after=2)
+            # Use a right-aligned tab stop for the dates to sit flush right
+            tab_stops = p_job.paragraph_format.tab_stops
+            tab_stops.add_tab_stop(Inches(7.5), WD_TAB_ALIGNMENT.RIGHT)
+
+            run(p_job, job.get("title", ""), bold=True, size=11)
+            p_job.add_run("\t")
+            run(p_job, job.get("dates", ""), bold=True, size=10)
+
+            p_comp = para(after=4)
+            run(p_comp, job.get("company", ""), italic=True, bold=True)
+
+            for bullet in job.get("bullets", []):
+                p_bull = para(after=3)
+                p_bull.paragraph_format.left_indent = Inches(0.25)
+                p_bull.paragraph_format.first_line_indent = Inches(-0.15)
+                run(p_bull, "•  " + bullet)
+
+    # 5. Education
+    education = profile.get("education", [])
+    if education:
+        add_section_header("Education & Certifications")
+        for edu in education:
+            p_edu = para(after=3)
+            run(p_edu, edu)
+
+    doc.save(out_path)
 
 
-def build_cover_letter_docx(profile: dict, cover_letter_text: str, company: str,
-                             job_title: str, out_path: Path):
-    """Simple, professional single-page cover letter matching the resume's font/margins."""
+# ---------------------------------------------------------------
+# 6. COVER LETTER GENERATION (NEW IN v4)
+# ---------------------------------------------------------------
+def build_cover_letter_docx(profile: dict, out_path: Path):
     doc = Document()
-
+    
     section = doc.sections[0]
     section.page_width, section.page_height = Inches(8.5), Inches(11)
     for side in ("left", "right", "top", "bottom"):
-        setattr(section, f"{side}_margin", Inches(1))
+        setattr(section, f"{side}_margin", Inches(1.0))
 
     style = doc.styles["Normal"]
     style.font.name = "Times New Roman"
     style.font.size = Pt(11)
-    style.paragraph_format.space_after = Pt(10)
 
-    def para(align=None):
+    def para(after=12):
         p = doc.add_paragraph()
-        if align:
-            p.alignment = align
+        p.paragraph_format.space_after = Pt(after)
         return p
 
     def run(p, text, bold=False, size=11):
         r = p.add_run(text)
         r.bold = bold
         r.font.size = Pt(size)
-        r.font.name = "Times New Roman"
         return r
 
-    p = para()
-    run(p, profile.get("name", ""), bold=True, size=13)
-    if profile.get("contact_line"):
-        p = para()
-        run(p, profile["contact_line"], size=10)
+    # Contact Header (matching resume style)
+    p_head = para(after=24)
+    run(p_head, profile.get("name", "Candidate Name") + "\n", bold=True, size=16)
+    run(p_head, profile.get("contact_line", ""), size=10)
 
-    p = para()
-    run(p, datetime.now().strftime("%B %d, %Y"))
+    # Date
+    p_date = para(after=24)
+    run(p_date, datetime.today().strftime("%B %d, %Y"))
 
-    p = para()
-    run(p, f"Re: Application for {job_title} at {company}", bold=True)
+    # Body
+    cl_text = profile.get("cover_letter", "")
+    if not cl_text:
+        cl_text = (
+            "Dear Hiring Manager,\n\n"
+            "I am writing to express my interest in the open position. "
+            "Please find my attached resume outlining my background and qualifications.\n\n"
+            "Thank you for your time and consideration.\n\n"
+            f"Sincerely,\n{profile.get('name', 'Candidate Name')}"
+        )
 
-    p = para()
-    run(p, "Dear Hiring Manager,")
+    for paragraph in cl_text.split("\n\n"):
+        if paragraph.strip():
+            p_body = para()
+            run(p_body, paragraph.strip())
 
-    for block in (cover_letter_text or "").split("\n\n"):
-        block = block.strip()
-        if not block:
-            continue
-        p = para(WD_ALIGN_PARAGRAPH.JUSTIFY)
-        run(p, block)
-
-    p = para()
-    run(p, "Sincerely,")
-    p = para()
-    run(p, profile.get("name", ""), bold=True)
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(out_path))
+    doc.save(out_path)
 
 
-def safe_filename(text: str) -> str:
-    return re.sub(r"[^A-Za-z0-9]+", "_", text).strip("_")[:60]
+# ---------------------------------------------------------------
+# 7. MAIN STREAMLIT APP LOGIC (UI & BATCH PROCESSING)
+# ---------------------------------------------------------------
+def sanitize_filename(name: str) -> str:
+    """Strip invalid characters so it's safe to use as a folder/file name."""
+    return re.sub(r'[\\/*?:"<>|]', "", name).strip()
 
+def main():
+    st.title(f"⚡ Advanced ATS Resume Automator {APP_VERSION}")
+    st.markdown(f"**Developed by {APP_AUTHOR}** — Batch Mode + Auto Cover Letters")
 
-def extract_forced_company(jd_block: str):
-    """
-    If a batch JD block starts with a line like "COMPANY: Acme Corp", pull that out
-    as an override for the folder/company name and strip it from the JD text sent
-    to the AI. Returns (forced_company_or_None, cleaned_jd_text).
-    """
-    lines = jd_block.splitlines()
-    if lines and lines[0].strip().lower().startswith(FORCE_COMPANY_PREFIX):
-        forced = lines[0].split(":", 1)[1].strip()
-        remainder = "\n".join(lines[1:]).strip()
-        return (forced or None), (remainder or jd_block)
-    return None, jd_block
+    st.sidebar.header("⚙️ Settings & API Keys")
 
+    # 1. Gemini Pool
+    st.sidebar.subheader("1. Gemini Multi-Key Pool")
+    gemini_key_file = st.sidebar.text_input("Gemini keys file (.txt path)", value=r"C:\keys\gemini_keys.txt")
+    if st.sidebar.button("🔄 Reload keys from file"):
+        st.rerun()
 
-# ===============================================================
-#                      STREAMLIT UI
-# ===============================================================
-st.title("⚡ ATS Resume Automator")
-st.caption("Paste a JD → get a tailored, ATS-clean resume in seconds. "
-           "Job titles, companies, dates & education are never changed. No fake facts. "
-           "Multi-key Gemini pool + multi-provider automatic failover.")
-st.markdown(
-    f"""
-    <div style="
-        display:inline-flex; align-items:center; gap:8px;
-        background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%);
-        color:#ffffff; padding:6px 16px; border-radius:999px;
-        font-size:13px; font-weight:600; margin:2px 0 14px 0;
-        box-shadow:0 3px 10px rgba(139,92,246,0.35);
-        letter-spacing:0.2px;">
-        <span>👨‍💻</span>
-        <span>Developed by {APP_AUTHOR}</span>
-        <span style="opacity:0.8; font-weight:500;">· {APP_VERSION}</span>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-with st.sidebar:
-    st.header("① One-time Setup")
-
-    # ---------- Gemini multi-key pool ----------
-    st.subheader("🔑 Gemini key pool (recommended)")
-    st.caption("Upload a plain .txt file with ALL your Gemini API keys, one per line. "
-               "The app rotates through them automatically when one gets rate-limited.")
-
-    uploaded_keys_file = st.file_uploader(
-        "Upload Gemini keys file (.txt)",
-        type=["txt"],
-        key="gemini_keys_uploader",
-        help="One API key per line. Blank lines and lines starting with # are ignored.",
-    )
-
-    if uploaded_keys_file is not None:
+    gemini_pool = []
+    if gemini_key_file.strip():
         try:
-            content = uploaded_keys_file.getvalue().decode("utf-8", errors="ignore")
-            st.session_state["gemini_key_pool"] = parse_keys_text(content)
-            st.session_state["gemini_key_pool_error"] = None
-        except Exception as e:                        # noqa: BLE001
-            st.session_state["gemini_key_pool"] = []
-            st.session_state["gemini_key_pool_error"] = str(e)
-
-    with st.expander("Advanced: load from a local file path instead"):
-        st.caption("⚠️ This only works when you run the app on your own computer "
-                   "(`streamlit run app.py`). It will NOT work on Streamlit Cloud or any "
-                   "hosted deployment — the server has no access to your PC's C:\\ drive, "
-                   "and pasting a web URL here will not work either since this reads local "
-                   "files, not web pages. Use the uploader above instead on Streamlit Cloud.")
-        gemini_key_file_path = st.text_input(
-            "Gemini keys file (.txt, one key per line)",
-            value="",
-            placeholder=r"e.g. C:\Users\YourName\gemini_keys.txt",
-            key="gemini_key_file_path",
-            help="Type or paste the FULL path to your own keys file on this computer — "
-                 "everyone's path will be different, so nothing is pre-filled here.",
-        )
-        reload_clicked = st.button("🔄 Reload keys from local path", use_container_width=True)
-        if reload_clicked:
-            try:
-                loaded = load_keys_from_file(gemini_key_file_path) if gemini_key_file_path.strip() else []
-                st.session_state["gemini_key_pool"] = loaded
-                st.session_state["gemini_key_pool_error"] = None
-            except Exception as e:                        # noqa: BLE001
-                st.session_state["gemini_key_pool"] = []
-                st.session_state["gemini_key_pool_error"] = str(e)
-
-    gemini_key_pool = st.session_state.get("gemini_key_pool", [])
-    pool_error = st.session_state.get("gemini_key_pool_error")
-
-    if pool_error:
-        st.error(f"Couldn't read key file: {pool_error}")
-    elif gemini_key_pool:
-        st.success(f"Loaded {len(gemini_key_pool)} Gemini key(s).")
-    else:
-        st.warning("No keys loaded yet — upload a .txt file above.")
-
-    if gemini_key_pool:
-        with st.expander(f"Show loaded keys (masked) — {len(gemini_key_pool)} total"):
-            for i, k in enumerate(gemini_key_pool, start=1):
-                st.markdown(f"{i}. `{gemini_key_short(k)}`")
-
-    st.markdown("---")
-
-    # ---------- Optional manual keys (single key each) ----------
-    with st.expander("Optional: manual keys (fallback, single key each)"):
-        st.caption("Only needed if you don't want to use the key-file pool above, "
-                   "or want extra providers as backup.")
-        keys = {}
-        for p in PROVIDERS:
-            keys[p["id"]] = st.text_input(
-                p["label"], type="password", help=p["hint"], key=f"key_{p['id']}"
-            )
-
-    st.markdown("---")
-
-    # ---------- Candidate path picker ----------
-    st.subheader("👤 Candidate")
-
-    st.markdown(
-        "Upload the candidate's resume below — this works both locally and on "
-        "Streamlit Cloud."
-    )
-    uploaded_resume_file = st.file_uploader(
-        "📤 Upload resume",
-        type=["docx", "pdf"],
-        key="resume_uploader",
-    )
-
-    force_reparse = st.checkbox("Re-parse resume (use if you edited the original)", value=False)
-
-    # ---------- Cooldown status ----------
-    cooldowns = st.session_state.get("cooldowns", {})
-    active_cd = {k: t for k, t in cooldowns.items() if t > time.time()}
-    if active_cd:
-        st.markdown("---")
-        st.markdown("**⏳ Rate-limited (auto-retry soon):**")
-        label_by_id = {p["id"]: p["label"] for p in PROVIDERS}
-        for key, t in active_cd.items():
-            mins = int((t - time.time()) // 60) + 1
-            if key.startswith("gemini:"):
-                raw_key = key.split("gemini:", 1)[1]
-                st.markdown(f"- Gemini key `{gemini_key_short(raw_key)}` — {mins} min")
+            gemini_pool = load_keys_from_file(gemini_key_file)
+            if gemini_pool:
+                st.sidebar.success(f"Active pool: {len(gemini_pool)} keys loaded.")
             else:
-                st.markdown(f"- {label_by_id.get(key, key)} — {mins} min")
+                st.sidebar.warning("File found, but no valid keys inside.")
+        except Exception as e:
+            st.sidebar.warning(f"Key file missing or invalid path: {e}")
 
-    # ---------- Footer credit ----------
-    st.markdown("---")
-    st.markdown(
-        f"""
-        <div style="
-            text-align:center; padding:14px 10px; margin-top:4px;
-            border-radius:14px;
-            background:linear-gradient(135deg,rgba(99,102,241,0.15),rgba(236,72,153,0.15));
-            border:1px solid rgba(139,92,246,0.35);">
-            <div style="font-size:20px; margin-bottom:2px;">⚡</div>
-            <div style="font-size:11px; letter-spacing:1px; opacity:0.7; text-transform:uppercase;">
-                ATS Resume Automator {APP_VERSION}
-            </div>
-            <div style="
-                font-size:15px; font-weight:800; margin-top:4px;
-                background:linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899);
-                -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-                background-clip:text;">
-                Developed by {APP_AUTHOR}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # Fallback Providers
+    with st.sidebar.expander("Single-Key Fallbacks (Optional)"):
+        manual_keys = {}
+        manual_keys["gemini"] = st.text_input("Manual Gemini Key", type="password")
+        for p in PROVIDERS:
+            if p["id"] == "gemini":
+                continue
+            manual_keys[p["id"]] = st.text_input(f"{p['label']} Key", type="password")
 
-st.header("② Job Description(s)")
+    st.sidebar.divider()
 
-include_cover_letter = st.checkbox(
-    "✉️ Also generate a tailored cover letter with every resume",
-    value=True,
-    help="Adds one extra field to the SAME AI call used to tailor the resume — "
-         "this does not use a second API call, so it's free in terms of quota.",
-)
+    # 2. Candidate Selection
+    st.sidebar.subheader("2. Candidate Resume")
+    candidate_opts = list(SAVED_CANDIDATES.keys()) + [CUSTOM_PATH_LABEL]
+    selected_cand = st.sidebar.selectbox("Select Profile", candidate_opts)
 
-tab_single, tab_batch = st.tabs(["📄 Single JD", "📦 Batch Mode (multiple JDs)"])
-
-with tab_single:
-    jd_text = st.text_area(
-        "Job Description", height=280,
-        placeholder="Copy the entire JD from LinkedIn / Indeed / Dice and paste here…",
-        key="single_jd_text",
-    )
-    generate = st.button("🚀 Generate Tailored Resume", type="primary",
-                         use_container_width=True, key="single_generate_btn")
-
-with tab_batch:
-    st.caption(
-        "Process many job descriptions in one run. You'll get back a single ZIP with "
-        "one folder per company (resume + cover letter if enabled above), plus a "
-        "`summary.csv` listing coverage % and status for every application."
-    )
-    batch_input_mode = st.radio(
-        "How do you want to provide the JDs?",
-        ["Paste multiple JDs", "Upload JD .txt files"],
-        horizontal=True,
-        key="batch_input_mode",
-    )
-
-    batch_jd_items = []  # list of (label, raw_jd_block)
-
-    if batch_input_mode == "Paste multiple JDs":
-        st.caption(
-            f"Paste JDs one after another. Put a line containing exactly "
-            f"`{JD_SPLIT_MARKER}` between each JD. Optionally start any JD with a line "
-            f"like `COMPANY: Acme Corp` to force that folder/company name, useful when "
-            f"a JD (e.g. from a recruiter) doesn't clearly state the hiring company."
-        )
-        batch_jd_text = st.text_area(
-            "Multiple Job Descriptions",
-            height=320,
-            placeholder=(
-                f"COMPANY: Acme Corp\n<paste JD 1 here>\n\n{JD_SPLIT_MARKER}\n\n"
-                f"<paste JD 2 here>\n\n{JD_SPLIT_MARKER}\n\n<paste JD 3 here>"
-            ),
-            key="batch_jd_text",
-        )
-        if batch_jd_text.strip():
-            for i, block in enumerate(re.split(re.escape(JD_SPLIT_MARKER), batch_jd_text), start=1):
-                block = block.strip()
-                if len(block) >= 100:
-                    batch_jd_items.append((f"JD {i}", block))
+    if selected_cand == CUSTOM_PATH_LABEL:
+        resume_path_str = st.sidebar.text_input("Full path to original resume (.pdf or .docx)")
     else:
-        batch_files = st.file_uploader(
-            "Upload one .txt file per JD",
-            type=["txt"],
-            accept_multiple_files=True,
-            key="batch_jd_files",
-        )
-        if batch_files:
-            for f in batch_files:
-                text = f.getvalue().decode("utf-8", errors="ignore").strip()
-                if len(text) >= 100:
-                    batch_jd_items.append((Path(f.name).stem, text))
+        resume_path_str = SAVED_CANDIDATES[selected_cand]
 
-    if batch_jd_items:
-        st.info(f"📋 {len(batch_jd_items)} job description(s) ready to process.")
+    st.sidebar.divider()
 
-    generate_batch = st.button(
-        f"🚀 Generate {len(batch_jd_items)} Tailored Resume(s)" if batch_jd_items else "🚀 Generate Batch",
-        type="primary", use_container_width=True,
-        disabled=not batch_jd_items, key="batch_generate_btn",
-    )
+    # 3. Add-ons
+    st.sidebar.subheader("3. Tailoring Options")
+    include_cover_letter = st.sidebar.checkbox("Generate Cover Letter alongside Resume", value=True)
 
-if generate:
-    have_gemini_pool = bool(gemini_key_pool)
-    have_manual_key = any((v or "").strip() for v in keys.values())
-    if not have_gemini_pool and not have_manual_key:
-        st.error("Please load a Gemini keys file OR enter at least one manual provider key "
-                 "in the sidebar.")
+    if not resume_path_str:
+        st.info("👈 Please select or enter a candidate resume path in the sidebar to begin.")
         st.stop()
 
-    if uploaded_resume_file is None:
-        st.error("Please upload a resume file (.docx or .pdf) in the sidebar.")
+    resume_path = Path(resume_path_str.strip('"').strip("'"))
+    if not resume_path.exists():
+        st.error(f"Original resume not found at: {resume_path}")
         st.stop()
 
-    # Save the uploaded bytes to a temp file so the rest of the pipeline
-    # (which expects a real filesystem Path) works unchanged — this is
-    # what makes the app work on Streamlit Cloud, not just locally.
-    tmp_dir = Path(tempfile.gettempdir()) / "ats_resume_uploads"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    upload_name = Path(uploaded_resume_file.name).name  # strip any path junk
-    resume_path = tmp_dir / upload_name
-    with open(resume_path, "wb") as f:
-        f.write(uploaded_resume_file.getbuffer())
-    st.caption(f"🔎 Using uploaded file: `{upload_name}`")
+    # Application Tabs
+    tab1, tab2 = st.tabs(["📄 Single Application", "📑 Batch Mode"])
 
-    if len(jd_text.strip()) < 100:
-        st.error("That JD looks too short — paste the full job description.")
-        st.stop()
-    t0 = time.time()
-
-    try:
-        with st.status("Working…", expanded=True) as status:
-            st.write("📄 Reading candidate profile…")
-            profile, parse_provider = load_or_parse_profile(
-                keys, gemini_key_pool, resume_path, force=force_reparse
-            )
-            if parse_provider:
-                st.write(f"　↳ profile learned via {parse_provider} (one-time)")
-
-            st.write("🧠 Tailoring resume to this JD (8-stage process)…")
-            tailored, provider_used, notes = tailor_profile(
-                keys, gemini_key_pool, profile, jd_text,
-                include_cover_letter=include_cover_letter,
-            )
-            for n in notes:
-                st.write(f"　↳ {n}")
-            st.write(f"　↳ generated via **{provider_used}**")
-
-            st.write("📊 Calculating real keyword coverage (code-level, not AI-reported)…")
-            coverage_pct, matched_kws, missing_kws = calculate_keyword_coverage(jd_text, tailored)
-            st.write(f"　↳ {coverage_pct}% of top JD keywords found in the tailored resume")
-
-            st.write("📝 Building ATS-compliant Word document…")
-            # Keep the original resume filename exactly (always .docx output),
-            # overwriting any previous tailored version for this candidate+company.
-            fname = resume_path.stem + ".docx"
-
-            company_for_jd = tailored.get("company_detected", "Company") or "Company"
-            company_folder = safe_filename(company_for_jd) or "Company"
-
-            out_dir = Path("output") / company_folder
-            out_path = out_dir / fname
-
-            build_docx(tailored, out_path)
-
-            cover_letter_text = (tailored.get("cover_letter") or "").strip() if include_cover_letter else ""
-            cl_path = None
-            if cover_letter_text:
-                st.write("✉️ Building tailored cover letter…")
-                cl_path = out_dir / (resume_path.stem + "_CoverLetter.docx")
-                build_cover_letter_docx(
-                    profile, cover_letter_text, company_for_jd,
-                    tailored.get("job_title_detected", "Role"), cl_path,
-                )
-
-            status.update(label=f"Done in {time.time()-t0:.1f}s ✅ (via {provider_used})",
-                          state="complete")
-
-        job_title = tailored.get("job_title_detected", "Role")
-        company = tailored.get("company_detected", "Company")
-
-        # ---- Package as a zip so the downloaded item unpacks into a
-        # ---- folder named after the company (browsers can't save a
-        # ---- single download "into" a folder directly — zip is the
-        # ---- standard workaround for that). ----
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.write(out_path, arcname=f"{company_folder}/{fname}")
-            if cl_path and cl_path.exists():
-                zf.write(cl_path, arcname=f"{company_folder}/{cl_path.name}")
-        zip_bytes = zip_buffer.getvalue()
-        zip_filename = f"{company_folder}.zip"
-
-        contents_note = "the resume and cover letter" if cl_path else "the resume"
-        st.success(
-            f"**Generated:** `{out_path}` — packaged into **{zip_filename}**, which "
-            f"unzips into a **{company_folder}/** folder containing {contents_note}.  \n"
-            f"📁 Company folder: **{company_folder}**"
-        )
-
-        # ---- Attempt an automatic download (no click needed). Most
-        # ---- browsers allow this since it's triggered right after a
-        # ---- direct button click (Generate), but some may still block
-        # ---- it once per site the first time — the manual button
-        # ---- below always works as a fallback either way. ----
-        b64_zip = base64.b64encode(zip_bytes).decode()
-        auto_dl_id = f"autodl_{int(time.time() * 1000)}"
-        st.components.v1.html(
-            f"""
-            <a id="{auto_dl_id}" href="data:application/zip;base64,{b64_zip}"
-               download="{zip_filename}" style="display:none;"></a>
-            <script>
-                document.getElementById("{auto_dl_id}").click();
-            </script>
-            """,
-            height=0,
-            width=0,
-        )
-
-        col1, col2, col3 = st.columns([2, 1, 2])
-        with col1:
-            st.subheader("🎯 Detected Role")
-            st.write(f"**{job_title}** at **{company}**")
-            st.download_button(
-                f"⬇️ Download {zip_filename} (folder: {company_folder}/)",
-                zip_bytes,
-                file_name=zip_filename,
-                mime="application/zip",
-                use_container_width=True,
-            )
-            st.caption("If the download didn't start automatically, use the button above. "
-                       "Unzip it and you'll get a folder named after the company with the "
-                       "resume inside.")
-        with col2:
-            st.subheader("📊 Coverage")
-            st.metric("JD keywords (code-calculated)", f"{coverage_pct}%",
-                      help="Calculated in code from actual JD word frequency vs. the final "
-                           "resume text — not self-reported by the AI. Target 70–80%; "
-                           "100% looks like keyword stuffing to recruiters.")
-        with col3:
-            st.subheader("🔑 Keywords Matched")
-            st.write(" · ".join(matched_kws) if matched_kws else "—")
-
-        with st.expander("📋 Full keyword coverage detail (code-calculated)", expanded=False):
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown(f"**✅ Matched ({len(matched_kws)})**")
-                for kw in matched_kws or ["—"]:
-                    st.markdown(f"- {kw}")
-            with c2:
-                st.markdown(f"**❌ Missing ({len(missing_kws)})**")
-                for kw in missing_kws or ["—"]:
-                    st.markdown(f"- {kw}")
-
-        gap = tailored.get("gap_analysis", {}) or {}
-        with st.expander("🔍 Gap Analysis (Stage 3) — how the JD was matched", expanded=True):
-            g1, g2, g3 = st.columns(3)
-            with g1:
-                st.markdown("**✅ Direct matches**")
-                for item in gap.get("direct_matches", []) or ["—"]:
-                    st.markdown(f"- {item}")
-            with g2:
-                st.markdown("**🔁 Implied matches (made explicit)**")
-                for item in gap.get("implied_matches", []) or ["—"]:
-                    st.markdown(f"- {item}")
-            with g3:
-                st.markdown("**⛔ Not added (candidate lacks this)**")
-                for item in (gap.get("no_match_not_fabricated", [])
-                             or tailored.get("missing_keywords", []) or ["—"]):
-                    st.markdown(f"- {item}")
-            st.caption("⛔ items were deliberately NOT claimed — never state these in the "
-                       "application or interview prep either.")
-
-        with st.expander("Preview new summary & skills"):
-            st.markdown(f"**Summary:** {tailored.get('summary','')}")
-            for s in tailored.get("skills", []):
-                st.markdown(f"**{s.get('category','')}:** {s.get('items','')}")
-
-        if cover_letter_text:
-            with st.expander("✉️ Preview cover letter", expanded=False):
-                for block in cover_letter_text.split("\n\n"):
-                    if block.strip():
-                        st.markdown(block.strip())
-                        st.markdown("")
-
-    except Exception as e:                            # noqa: BLE001
-        st.error(f"Something went wrong: {e}")
-        st.info("Common fixes: add more keys to your Gemini key file, check your API keys, "
-                "add another provider key in the sidebar, check internet, or tick "
-                "'Re-parse resume' if the profile cache is corrupted.")
-
-if generate_batch:
-    have_gemini_pool = bool(gemini_key_pool)
-    have_manual_key = any((v or "").strip() for v in keys.values())
-    if not have_gemini_pool and not have_manual_key:
-        st.error("Please load a Gemini keys file OR enter at least one manual provider key "
-                 "in the sidebar.")
-        st.stop()
-
-    if uploaded_resume_file is None:
-        st.error("Please upload a resume file (.docx or .pdf) in the sidebar.")
-        st.stop()
-
-    tmp_dir = Path(tempfile.gettempdir()) / "ats_resume_uploads"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    upload_name = Path(uploaded_resume_file.name).name
-    resume_path = tmp_dir / upload_name
-    with open(resume_path, "wb") as f:
-        f.write(uploaded_resume_file.getbuffer())
-    st.caption(f"🔎 Using uploaded file: `{upload_name}` — {len(batch_jd_items)} job description(s)")
-
-    batch_t0 = time.time()
-
-    try:
-        with st.spinner("📄 Reading candidate profile…"):
-            profile, parse_provider = load_or_parse_profile(
-                keys, gemini_key_pool, resume_path, force=force_reparse
-            )
-        if parse_provider:
-            st.caption(f"　↳ profile learned via {parse_provider} (one-time)")
-    except Exception as e:                            # noqa: BLE001
-        st.error(f"Couldn't read/parse the resume: {e}")
-        st.stop()
-
-    results = []
-    used_folder_names = set()
-    progress = st.progress(0.0, text=f"Processing 0/{len(batch_jd_items)}…")
-    log_box = st.empty()
-    log_lines = []
-
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for idx, (label, raw_block) in enumerate(batch_jd_items, start=1):
-            forced_company, jd_clean = extract_forced_company(raw_block)
-            row = {"label": label, "company": "", "job_title": "", "coverage": None,
-                  "status": "❌ failed", "provider": "", "error": ""}
+    def process_jds(jd_list):
+        with st.spinner("Step 1: Parsing original resume into structured profile..."):
             try:
-                if len(jd_clean.strip()) < 100:
-                    raise ValueError("JD text too short after removing the COMPANY: line")
+                profile, init_provider = load_or_parse_profile(manual_keys, gemini_pool, resume_path)
+            except Exception as e:
+                st.error(f"Failed to parse original resume: {e}")
+                return
 
-                tailored, provider_used, notes = tailor_profile(
-                    keys, gemini_key_pool, profile, jd_clean,
-                    include_cover_letter=include_cover_letter,
+        # Prepare isolated output directory for this run
+        out_dir = Path(tempfile.gettempdir()) / f"ats_automator_run_{int(time.time())}"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        progress = st.progress(0)
+        status = st.empty()
+        results = []
+
+        for i, jd_raw in enumerate(jd_list):
+            status.markdown(f"**Processing Job {i+1} of {len(jd_list)}...**")
+            jd_text = jd_raw.strip()
+
+            # Handle explicit company overrides (helpful for recruiter copy-pastes)
+            forced_company = None
+            if jd_text.lower().startswith(FORCE_COMPANY_PREFIX):
+                first_line, rest = jd_text.split("\n", 1)
+                forced_company = first_line.split(":", 1)[1].strip()
+                jd_text = rest.strip()
+
+            if not jd_text:
+                continue
+
+            try:
+                # Core Engine Call
+                tailored_profile, provider, notes = tailor_profile(
+                    manual_keys, gemini_pool, profile, jd_text, include_cover_letter
                 )
-                coverage_pct, matched_kws, missing_kws = calculate_keyword_coverage(jd_clean, tailored)
 
-                company_for_jd = forced_company or tailored.get("company_detected", "Company") or "Company"
-                job_title = tailored.get("job_title_detected", "Role")
+                if forced_company:
+                    tailored_profile["company_detected"] = forced_company
 
-                company_folder = safe_filename(company_for_jd) or f"Company_{idx}"
-                n = 2
-                while company_folder in used_folder_names:
-                    company_folder = f"{safe_filename(company_for_jd) or 'Company'}_{n}"
-                    n += 1
-                used_folder_names.add(company_folder)
+                comp_name = sanitize_filename(tailored_profile.get("company_detected", f"Company_{i+1}"))
+                job_title = sanitize_filename(tailored_profile.get("job_title_detected", f"Role_{i+1}"))
 
-                fname = resume_path.stem + ".docx"
-                out_dir = Path("output") / "batch" / company_folder
-                out_path = out_dir / fname
-                build_docx(tailored, out_path)
-                zf.write(out_path, arcname=f"{company_folder}/{fname}")
+                # Strict code-level keyword matching
+                cov_pct, matched, missing = calculate_keyword_coverage(jd_text, tailored_profile)
 
-                cl_text = (tailored.get("cover_letter") or "").strip() if include_cover_letter else ""
-                if cl_text:
-                    cl_path = out_dir / (resume_path.stem + "_CoverLetter.docx")
-                    build_cover_letter_docx(profile, cl_text, company_for_jd, job_title, cl_path)
-                    zf.write(cl_path, arcname=f"{company_folder}/{cl_path.name}")
+                # Generate outputs
+                app_dir = out_dir / comp_name
+                app_dir.mkdir(exist_ok=True)
 
-                row.update({
-                    "company": company_for_jd, "job_title": job_title,
-                    "coverage": coverage_pct, "status": "✅ done",
-                    "provider": provider_used,
+                base_filename = f"{profile.get('name', 'Candidate').replace(' ', '_')}_{comp_name}_{job_title}"
+                
+                resume_out = app_dir / f"{base_filename}_Resume.docx"
+                build_docx(tailored_profile, resume_out)
+
+                if include_cover_letter and "cover_letter" in tailored_profile:
+                    cl_out = app_dir / f"{base_filename}_CoverLetter.docx"
+                    build_cover_letter_docx(tailored_profile, cl_out)
+
+                results.append({
+                    "Company": comp_name,
+                    "Role": job_title,
+                    "Coverage (%)": cov_pct,
+                    "Provider Used": provider,
+                    "Status": "✅ Success"
                 })
-                log_lines.append(f"✅ {label} → {company_for_jd} / {job_title} — "
-                                 f"{coverage_pct}% via {provider_used}")
-            except Exception as e:                    # noqa: BLE001
-                row["error"] = str(e)[:200]
-                log_lines.append(f"❌ {label} — failed: {row['error'][:150]}")
 
-            results.append(row)
-            log_box.code("\n".join(log_lines[-12:]) or "…", language=None)
-            progress.progress(idx / len(batch_jd_items),
-                              text=f"Processed {idx}/{len(batch_jd_items)} — {label}")
+            except Exception as e:
+                results.append({
+                    "Company": f"Job {i+1}",
+                    "Role": "Unknown",
+                    "Coverage (%)": 0,
+                    "Provider Used": "-",
+                    "Status": f"❌ Error: {str(e)}"
+                })
 
-        summary_io = io.StringIO()
-        writer = csv.writer(summary_io)
-        writer.writerow(["Label", "Company", "Job Title", "Coverage %", "Status", "Provider", "Error"])
-        for r in results:
-            writer.writerow([r["label"], r["company"], r["job_title"],
-                             r.get("coverage", ""), r["status"], r.get("provider", ""), r.get("error", "")])
-        zf.writestr("summary.csv", summary_io.getvalue())
+            progress.progress((i + 1) / len(jd_list))
 
-    zip_bytes = zip_buffer.getvalue()
-    batch_zip_name = f"BatchApplications_{datetime.now().strftime('%Y%m%d_%H%M')}.zip"
-    ok_count = sum(1 for r in results if r["status"].startswith("✅"))
+        status.success(f"Generation complete! {len(jd_list)} job(s) evaluated.")
 
-    if ok_count == len(results):
-        st.success(f"Finished all {len(results)} job description(s) in "
-                  f"{time.time()-batch_t0:.1f}s ✅")
-    else:
-        st.warning(f"Finished {len(results)} job description(s) in {time.time()-batch_t0:.1f}s — "
-                  f"{ok_count} succeeded, {len(results)-ok_count} failed (see table below).")
+        # Summary CSV for the user
+        csv_path = out_dir / "summary.csv"
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["Company", "Role", "Coverage (%)", "Provider Used", "Status"])
+            writer.writeheader()
+            writer.writerows(results)
 
-    st.download_button(
-        f"⬇️ Download {batch_zip_name} ({ok_count} companies + summary.csv)",
-        zip_bytes, file_name=batch_zip_name, mime="application/zip",
-        use_container_width=True,
-    )
+        # Zip compilation
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for root, _, files in os.walk(out_dir):
+                for file in files:
+                    file_path = Path(root) / file
+                    arcname = file_path.relative_to(out_dir)
+                    zf.write(file_path, arcname)
 
-    st.subheader("📋 Batch summary")
-    st.dataframe(
-        [{"Company": r["company"] or "—", "Role": r["job_title"] or "—",
-          "Coverage %": r.get("coverage") if r.get("coverage") is not None else "—",
-          "Status": r["status"], "Provider": r.get("provider") or "—",
-          "Notes": r.get("error", "")}
-         for r in results],
-        use_container_width=True,
-    )
+        st.dataframe(results, use_container_width=True)
+        st.download_button(
+            label="📥 Download Application Materials (ZIP)",
+            data=buf.getvalue(),
+            file_name=f"Automated_Applications_{datetime.now().strftime('%Y%m%d_%H%M')}.zip",
+            mime="application/zip",
+            type="primary"
+        )
 
-st.markdown("---")
-st.markdown(
-    f"""
-    <div style="
-        text-align:center; padding:22px 10px 8px 10px;">
-        <div style="font-size:13px; opacity:0.65;">
-            ⚡ <strong>ATS Resume Automator</strong> &nbsp;{APP_VERSION}
-        </div>
-        <div style="font-size:17px; margin-top:6px; font-weight:500;">
-            Crafted with <span style="color:#ec4899;">♥</span> by
-            <span style="
-                font-weight:800; font-size:19px; margin-left:3px;
-                background:linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899);
-                -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-                background-clip:text;">
-                {APP_AUTHOR}
-            </span>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+    with tab1:
+        st.markdown("Tailor a resume for a single job description.")
+        single_jd = st.text_area("Paste Job Description", height=400, key="single_jd")
+        if st.button("✨ Tailor Single Application", type="primary"):
+            if single_jd.strip():
+                process_jds([single_jd])
+            else:
+                st.warning("Please paste a Job Description first.")
+
+    with tab2:
+        st.markdown(f"Tailor for multiple roles at once. Paste all JDs below, separated by exactly: `{JD_SPLIT_MARKER}`")
+        st.markdown(f"*Tip: If the JD doesn't list the company, start its block with `{FORCE_COMPANY_PREFIX} Company Name`*")
+        batch_jds = st.text_area("Paste Batch Job Descriptions", height=400, key="batch_jds")
+        if st.button("✨ Process Batch Applications", type="primary"):
+            if batch_jds.strip():
+                jd_list = [j.strip() for j in batch_jds.split(JD_SPLIT_MARKER) if j.strip()]
+                process_jds(jd_list)
+            else:
+                st.warning("Please paste your Job Descriptions first.")
+
+
+if __name__ == "__main__":
+    main()
