@@ -1,9 +1,9 @@
 """
 =====================================================================
- ADVANCED ATS RESUME AUTOMATOR v5 — ATS OPTIMIZED & SCORING ENGINE
+ ADVANCED ATS RESUME AUTOMATOR v5 — STREAMLIT CLOUD SAFE & ATS SCORING
  (Streamlit + OpenAI-compatible APIs + python-docx + pypdf)
 =====================================================================
- Developed by Noman Belim | Enhanced for Maximum ATS Compatibility
+ Developed by Noman Belim | Fixed for Streamlit Cloud & Gemini API
 =====================================================================
 """
 
@@ -28,23 +28,17 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 # APP METADATA
 # ---------------------------------------------------------------
 APP_AUTHOR = "Noman Belim"
-APP_VERSION = "v5 — High ATS Precision"
+APP_VERSION = "v5.1 — Fixed Cloud Deployment & Diagnostics"
 
 JD_SPLIT_MARKER = "===NEXT JD==="
-FORCE_COMPANY_PREFIX = "company:"
-
-SAVED_CANDIDATES = {
-    # Add preset candidate paths if desired:
-    # "Bethlehem Lulseged": r"D:\Noman\BETHLEHEM\Bethlehem_Lulseged_Resume.pdf",
-}
-CUSTOM_PATH_LABEL = "— Custom / Upload Resume —"
+CUSTOM_PATH_LABEL = "— Upload Resume (.docx or .pdf) —"
 
 PROVIDERS = [
     {
         "id": "gemini", 
         "label": "Google Gemini",
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "models": ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+        "models": ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
         "hint": "Free key: aistudio.google.com → Get API key",
     },
 ]
@@ -59,7 +53,7 @@ MODEL_GONE_MARKERS = ("404", "not found", "no longer available", "deprecated", "
 # ---------------------------------------------------------------
 # STREAMLIT CONFIG & CUSTOM STYLING
 # ---------------------------------------------------------------
-st.set_page_config(page_title="ATS Resume Automator v5", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="ATS Resume Automator", page_icon="⚡", layout="wide")
 
 st.markdown(
     """
@@ -161,7 +155,6 @@ def extract_text_from_file(file_path: Path) -> str:
         raise ValueError("Unsupported file type. Please upload a .docx or .pdf file.")
 
 def extract_jd_keywords(jd_text: str, top_n: int = 30) -> list[str]:
-    """Extract 1-gram, 2-gram, and 3-gram key phrases from JD."""
     text = jd_text.lower()
     words = re.findall(r"[a-z][a-z0-9+#./-]*", text)
     words = [w.strip(".-/") for w in words if w.strip(".-/")]
@@ -227,7 +220,6 @@ def flatten_profile_text(profile: dict) -> str:
     return " ".join(parts).lower()
 
 def calculate_ats_score(jd_text: str, profile: dict, top_n: int = 30):
-    """Calculate deterministic ATS match score (0 - 100%)."""
     keywords = extract_jd_keywords(jd_text, top_n=top_n)
     resume_blob = flatten_profile_text(profile)
 
@@ -286,21 +278,23 @@ def call_ai_json(keys: dict, gemini_key_pool: list, prompt: str):
     cooldowns = st.session_state.setdefault("cooldowns", {})
     notes, errors = [], []
 
-    for key in gemini_key_pool:
+    all_keys = list(gemini_key_pool)
+    manual_gemini_key = (keys.get("gemini") or "").strip()
+    if manual_gemini_key and manual_gemini_key not in all_keys:
+        all_keys.append(manual_gemini_key)
+
+    if not all_keys:
+        raise ValueError("No Gemini API key provided. Please enter a key or upload a key file in the sidebar.")
+
+    for key in all_keys:
         res = _try_gemini_key(key, prompt, cooldowns, notes, errors)
         if res:
             return res[0], res[1], notes
 
-    manual_gemini_key = (keys.get("gemini") or "").strip()
-    if manual_gemini_key and manual_gemini_key not in gemini_key_pool:
-        res = _try_gemini_key(manual_gemini_key, prompt, cooldowns, notes, errors)
-        if res:
-            return res[0], res[1], notes
-
-    raise RuntimeError("All configured AI keys failed or hit rate limits.\n" + "\n".join(errors + notes))
+    raise RuntimeError("All configured AI keys failed or hit rate limits:\n" + "\n".join(errors + notes))
 
 # ---------------------------------------------------------------
-# PROMPTS (OPTIMIZED FOR HIGH ATS IMPACT)
+# PROMPTS
 # ---------------------------------------------------------------
 PARSE_PROMPT = """You are a resume parsing engine. Convert the raw text below into strict JSON.
 Return ONLY JSON.
@@ -330,17 +324,16 @@ RESUME TEXT:
 TAILOR_PROMPT = """You are an expert Resume Writer & ATS Optimization Specialist.
 Your goal is to increase the candidate's ATS Match Score to 85%+ while strictly preserving factuality.
 
-MUST-HAVE KEYWORDS TO INTEGRATE (MUST BE WEAVED IN ACCURATELY):
+MUST-HAVE KEYWORDS TO INTEGRATE:
 {priority_keywords}
 
 RULES FOR ATS OPTIMIZATION:
 1. TARGET JOB TITLE: Match the headline directly to the target job title from the JD.
 2. SUMMARY REWRITE: High-impact 4-5 sentence summary containing top priority keywords naturally.
-3. SKILLS SECTION: Group key skills under existing categories. Include full skill names and common standard acronyms (e.g., "Project Management", "Agile / Scrum", "Jira", "Risk Management").
-4. EXPERIENCE BULLETS:
-   - Rewrite bullets using action verbs + exact JD terminology + tools + measurable impact.
+3. SKILLS SECTION: Group key skills under existing categories. Include full skill names and acronyms.
+4. EXPERIENCE BULLETS: Rewrite bullets using action verbs + exact JD terminology + tools + measurable impact.
    - Do NOT fabricate companies, dates, degrees, or tools never used.
-   - Re-align candidate's real tasks to use the JD's phrasing (e.g., if candidate did "task logs" and JD says "Issue & Risk Tracking", use "Issue & Risk Tracking").
+   - Re-align candidate's real tasks to use the JD's phrasing.
    - Keep the exact same number of bullets per role as the original resume.
 
 {cover_letter_stage}
@@ -403,7 +396,7 @@ def tailor_profile(keys: dict, gemini_key_pool: list, profile: dict, jd_text: st
     return call_ai_json(keys, gemini_key_pool, prompt)
 
 # ---------------------------------------------------------------
-# DOCX GENERATION ENGINE (SINGLE COLUMN, 100% ATS PARSEABLE)
+# DOCX GENERATION ENGINE
 # ---------------------------------------------------------------
 def build_docx(profile: dict, out_path: Path):
     doc = Document()
@@ -533,7 +526,7 @@ def build_cover_letter_docx(name: str, contact: str, title: str, company: str, t
         r_c.font.name = "Calibri"
         r_c.font.size = Pt(9.5)
 
-    doc.add_paragraph() # Spacer
+    doc.add_paragraph()
 
     for para in text.split("\n\n"):
         if para.strip():
@@ -551,50 +544,37 @@ def sanitize_filename(name: str) -> str:
 # ---------------------------------------------------------------
 # STREAMLIT UI & WORKFLOW
 # ---------------------------------------------------------------
-st.title("⚡ ATS Resume Automator v5")
+st.title("⚡ ATS Resume Automator")
 st.caption("Maximize ATS Match Score across Single & Batch Job Applications")
 
-# Sidebar Configuration
 st.sidebar.header("🔑 API Keys & Configuration")
 
-key_file_input = st.sidebar.text_input("Gemini Keys File Path (e.g. D:\\keys.txt)", "")
-uploaded_key_file = st.sidebar.file_uploader("Or Upload Gemini Keys TXT", type=["txt"])
+manual_gemini_key = st.sidebar.text_input("Enter Gemini API Key", type="password")
+uploaded_key_file = st.sidebar.file_uploader("Or Upload Gemini Keys TXT File", type=["txt"])
 
 gemini_pool = []
 if uploaded_key_file:
     gemini_pool = parse_keys_text(uploaded_key_file.getvalue().decode("utf-8", errors="ignore"))
-elif key_file_input:
-    try:
-        gemini_pool = load_keys_from_file(key_file_input)
-    except Exception as e:
-        st.sidebar.error(str(e))
 
 if gemini_pool:
-    st.sidebar.success(f"Loaded {len(gemini_pool)} Gemini Keys in Pool")
+    st.sidebar.success(f"Loaded {len(gemini_pool)} Gemini Keys from file")
 
-manual_gemini_key = st.sidebar.text_input("Fallback Single Gemini Key", type="password")
 keys = {"gemini": manual_gemini_key}
 
 st.sidebar.divider()
-st.sidebar.header("📄 Candidate Selection")
+st.sidebar.header("📄 Candidate Resume")
 
-candidate_choice = st.sidebar.selectbox("Select Candidate", list(SAVED_CANDIDATES.keys()) + [CUSTOM_PATH_LABEL])
-uploaded_resume = None
+uploaded_resume = st.sidebar.file_uploader("Upload Candidate Resume (.docx or .pdf)", type=["docx", "pdf"])
 resume_file_path = None
 
-if candidate_choice == CUSTOM_PATH_LABEL:
-    uploaded_resume = st.sidebar.file_uploader("Upload Base Resume (.docx or .pdf)", type=["docx", "pdf"])
-    if uploaded_resume:
-        temp_dir = Path(tempfile.gettempdir()) / "ats_resumes"
-        temp_dir.mkdir(exist_ok=True)
-        resume_file_path = temp_dir / uploaded_resume.name
-        resume_file_path.write_bytes(uploaded_resume.getvalue())
-else:
-    resume_file_path = Path(SAVED_CANDIDATES[candidate_choice])
+if uploaded_resume:
+    temp_dir = Path(tempfile.gettempdir()) / "ats_resumes"
+    temp_dir.mkdir(exist_ok=True)
+    resume_file_path = temp_dir / uploaded_resume.name
+    resume_file_path.write_bytes(uploaded_resume.getvalue())
 
 generate_cover_letter = st.sidebar.checkbox("Generate Cover Letter alongside Resume", value=True)
 
-# Main Application Tabs
 tab_single, tab_batch = st.tabs(["🎯 Single JD Optimization", "📦 Batch Processing Mode"])
 
 # ---------------------------------------------------------------
@@ -606,82 +586,86 @@ with tab_single:
 
     if st.button("🚀 Optimize Resume for ATS", type="primary", use_container_width=True):
         if not resume_file_path or not resume_file_path.exists():
-            st.error("Please select or upload a valid resume file first.")
+            st.error("Please upload a candidate resume (.docx or .pdf) in the sidebar first.")
         elif not jd_input.strip():
             st.error("Please paste a Job Description.")
         elif not gemini_pool and not manual_gemini_key:
-            st.error("Please provide at least one Gemini API key in the sidebar.")
+            st.error("Please enter a Gemini API Key or upload a key file in the sidebar.")
         else:
-            with st.status("Optimizing Resume...", expanded=True) as status:
-                st.write(" Parsing original candidate profile...")
-                profile, _ = load_or_parse_profile(keys, gemini_pool, resume_file_path)
+            try:
+                with st.status("Optimizing Resume...", expanded=True) as status:
+                    st.write(" Parsing original candidate profile...")
+                    profile, _ = load_or_parse_profile(keys, gemini_pool, resume_file_path)
 
-                orig_score, orig_matched, orig_missing = calculate_ats_score(jd_input, profile)
-                st.write(f" Initial Candidate ATS Score: **{orig_score}%**")
+                    orig_score, orig_matched, orig_missing = calculate_ats_score(jd_input, profile)
+                    st.write(f" Initial Candidate ATS Score: **{orig_score}%**")
 
-                st.write(" Tailoring content against JD requirements...")
-                tailored, provider_used = tailor_profile(keys, gemini_pool, profile, jd_input, generate_cover_letter)
+                    st.write(" Tailoring content against JD requirements...")
+                    tailored, provider_used, _ = tailor_profile(keys, gemini_pool, profile, jd_input, generate_cover_letter)
 
-                new_score, new_matched, new_missing = calculate_ats_score(jd_input, tailored)
-                st.write(f" Optimized Resume ATS Score: **{new_score}%** (Powered by {provider_used})")
+                    new_score, new_matched, new_missing = calculate_ats_score(jd_input, tailored)
+                    st.write(f" Optimized Resume ATS Score: **{new_score}%** (Powered by {provider_used})")
 
-                status.update(label=" Optimization Complete!", state="complete")
+                    status.update(label=" Optimization Complete!", state="complete")
 
-            # Metrics Display
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Original ATS Match", f"{orig_score}%")
-            c2.metric("Optimized ATS Match", f"{new_score}%", delta=f"+{new_score - orig_score}%")
-            c3.metric("Matched Keywords", f"{len(new_matched)} / {len(new_matched) + len(new_missing)}")
+                # Metrics Display
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Original ATS Match", f"{orig_score}%")
+                c2.metric("Optimized ATS Match", f"{new_score}%", delta=f"+{new_score - orig_score}%")
+                c3.metric("Matched Keywords", f"{len(new_matched)} / {len(new_matched) + len(new_missing)}")
 
-            st.divider()
+                st.divider()
 
-            # Output File Generation
-            out_dir = Path("output") / sanitize_filename(tailored.get("company_detected", "Company"))
-            out_dir.mkdir(parents=True, exist_ok=True)
+                # Output File Generation
+                out_dir = Path(tempfile.gettempdir()) / "ats_output" / sanitize_filename(tailored.get("company_detected", "Company"))
+                out_dir.mkdir(parents=True, exist_ok=True)
 
-            res_filename = f"{sanitize_filename(profile['name'])}_{sanitize_filename(tailored.get('job_title_detected', 'Tailored'))}_Resume.docx"
-            res_path = out_dir / res_filename
-            build_docx(tailored, res_path)
+                res_filename = f"{sanitize_filename(profile['name'])}_{sanitize_filename(tailored.get('job_title_detected', 'Tailored'))}_Resume.docx"
+                res_path = out_dir / res_filename
+                build_docx(tailored, res_path)
 
-            col_res, col_cov = st.columns(2)
-            with col_res:
-                st.success("Resume Generated Successfully!")
-                st.download_button(
-                    label="📥 Download ATS Resume (.docx)",
-                    data=res_path.read_bytes(),
-                    file_name=res_filename,
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    use_container_width=True
-                )
-
-            if generate_cover_letter and "cover_letter" in tailored:
-                cov_filename = f"{sanitize_filename(profile['name'])}_{sanitize_filename(tailored.get('job_title_detected', 'Role'))}_CoverLetter.docx"
-                cov_path = out_dir / cov_filename
-                build_cover_letter_docx(
-                    profile["name"], profile.get("contact_line", ""),
-                    tailored.get("job_title_detected", ""), tailored.get("company_detected", ""),
-                    tailored["cover_letter"], cov_path
-                )
-                with col_cov:
-                    st.success("Cover Letter Generated Successfully!")
+                col_res, col_cov = st.columns(2)
+                with col_res:
+                    st.success("Resume Generated Successfully!")
                     st.download_button(
-                        label="📥 Download Cover Letter (.docx)",
-                        data=cov_path.read_bytes(),
-                        file_name=cov_filename,
+                        label="📥 Download ATS Resume (.docx)",
+                        data=res_path.read_bytes(),
+                        file_name=res_filename,
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         use_container_width=True
                     )
 
-            # Keyword Breakdown
-            st.divider()
-            st.subheader("Keyword Match Breakdown")
-            col_m, col_u = st.columns(2)
-            with col_m:
-                st.markdown("** Matched Keywords in Resume:**")
-                st.write(", ".join([f"`{k}`" for k in new_matched]) if new_matched else "None")
-            with col_u:
-                st.markdown("** Unmatched / Omitted Keywords:**")
-                st.write(", ".join([f"`{k}`" for k in new_missing]) if new_missing else "None (100% Coverage)")
+                if generate_cover_letter and "cover_letter" in tailored:
+                    cov_filename = f"{sanitize_filename(profile['name'])}_{sanitize_filename(tailored.get('job_title_detected', 'Role'))}_CoverLetter.docx"
+                    cov_path = out_dir / cov_filename
+                    build_cover_letter_docx(
+                        profile["name"], profile.get("contact_line", ""),
+                        tailored.get("job_title_detected", ""), tailored.get("company_detected", ""),
+                        tailored["cover_letter"], cov_path
+                    )
+                    with col_cov:
+                        st.success("Cover Letter Generated Successfully!")
+                        st.download_button(
+                            label="📥 Download Cover Letter (.docx)",
+                            data=cov_path.read_bytes(),
+                            file_name=cov_filename,
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True
+                        )
+
+                # Keyword Breakdown
+                st.divider()
+                st.subheader("Keyword Match Breakdown")
+                col_m, col_u = st.columns(2)
+                with col_m:
+                    st.markdown("** Matched Keywords in Resume:**")
+                    st.write(", ".join([f"`{k}`" for k in new_matched]) if new_matched else "None")
+                with col_u:
+                    st.markdown("** Unmatched / Omitted Keywords:**")
+                    st.write(", ".join([f"`{k}`" for k in new_missing]) if new_missing else "None (100% Coverage)")
+
+            except Exception as ex:
+                st.error(f"Execution Error: {str(ex)}")
 
 # ---------------------------------------------------------------
 # TAB 2: BATCH PROCESSING MODE
@@ -708,61 +692,62 @@ with tab_batch:
                     jds_to_process.append(content)
 
         if not resume_file_path or not resume_file_path.exists():
-            st.error("Please select or upload a base resume first.")
+            st.error("Please upload a candidate resume (.docx or .pdf) in the sidebar first.")
         elif not jds_to_process:
             st.error("No valid JDs provided for batch processing.")
         elif not gemini_pool and not manual_gemini_key:
-            st.error("Please configure API keys first.")
+            st.error("Please enter a Gemini API key in the sidebar.")
         else:
-            zip_buffer = io.BytesIO()
-            summary_rows = [["Index", "Company", "Job Title", "Original ATS Score", "Optimized ATS Score", "Status"]]
+            try:
+                zip_buffer = io.BytesIO()
+                summary_rows = [["Index", "Company", "Job Title", "Original ATS Score", "Optimized ATS Score", "Status"]]
 
-            profile, _ = load_or_parse_profile(keys, gemini_pool, resume_file_path)
-            progress_bar = st.progress(0)
+                profile, _ = load_or_parse_profile(keys, gemini_pool, resume_file_path)
+                progress_bar = st.progress(0)
 
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                for idx, jd in enumerate(jds_to_process, 1):
-                    st.write(f"Processing JD {idx}/{len(jds_to_process)}...")
-                    try:
-                        orig_score, _, _ = calculate_ats_score(jd, profile)
-                        tailored, _ = tailor_profile(keys, gemini_pool, profile, jd, generate_cover_letter)
-                        new_score, _, _ = calculate_ats_score(jd, tailored)
+                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                    for idx, jd in enumerate(jds_to_process, 1):
+                        st.write(f"Processing JD {idx}/{len(jds_to_process)}...")
+                        try:
+                            orig_score, _, _ = calculate_ats_score(jd, profile)
+                            tailored, _, _ = tailor_profile(keys, gemini_pool, profile, jd, generate_cover_letter)
+                            new_score, _, _ = calculate_ats_score(jd, tailored)
 
-                        comp = sanitize_filename(tailored.get("company_detected", f"Company_{idx}"))
-                        role = sanitize_filename(tailored.get("job_title_detected", "Tailored_Role"))
+                            comp = sanitize_filename(tailored.get("company_detected", f"Company_{idx}"))
+                            role = sanitize_filename(tailored.get("job_title_detected", "Tailored_Role"))
 
-                        # Temporary docx saving
-                        with tempfile.TemporaryDirectory() as tmpdir:
-                            res_p = Path(tmpdir) / f"{comp}_{role}_Resume.docx"
-                            build_docx(tailored, res_p)
-                            zip_file.write(res_p, arcname=f"{comp}/{res_p.name}")
+                            with tempfile.TemporaryDirectory() as tmpdir:
+                                res_p = Path(tmpdir) / f"{comp}_{role}_Resume.docx"
+                                build_docx(tailored, res_p)
+                                zip_file.write(res_p, arcname=f"{comp}/{res_p.name}")
 
-                            if generate_cover_letter and "cover_letter" in tailored:
-                                cov_p = Path(tmpdir) / f"{comp}_{role}_CoverLetter.docx"
-                                build_cover_letter_docx(
-                                    profile["name"], profile.get("contact_line", ""),
-                                    tailored.get("job_title_detected", ""), comp,
-                                    tailored["cover_letter"], cov_p
-                                )
-                                zip_file.write(cov_p, arcname=f"{comp}/{cov_p.name}")
+                                if generate_cover_letter and "cover_letter" in tailored:
+                                    cov_p = Path(tmpdir) / f"{comp}_{role}_CoverLetter.docx"
+                                    build_cover_letter_docx(
+                                        profile["name"], profile.get("contact_line", ""),
+                                        tailored.get("job_title_detected", ""), comp,
+                                        tailored["cover_letter"], cov_p
+                                    )
+                                    zip_file.write(cov_p, arcname=f"{comp}/{cov_p.name}")
 
-                        summary_rows.append([idx, comp, role, f"{orig_score}%", f"{new_score}%", "Success"])
-                    except Exception as err:
-                        summary_rows.append([idx, "Unknown", "Unknown", "N/A", "N/A", f"Failed: {str(err)}"])
+                            summary_rows.append([idx, comp, role, f"{orig_score}%", f"{new_score}%", "Success"])
+                        except Exception as err:
+                            summary_rows.append([idx, "Unknown", "Unknown", "N/A", "N/A", f"Failed: {str(err)}"])
 
-                    progress_bar.progress(idx / len(jds_to_process))
+                        progress_bar.progress(idx / len(jds_to_process))
 
-                # Write CSV summary into zip
-                csv_buffer = io.StringIO()
-                writer = csv.writer(csv_buffer)
-                writer.writerows(summary_rows)
-                zip_file.writestr("batch_summary.csv", csv_buffer.getvalue())
+                    csv_buffer = io.StringIO()
+                    writer = csv.writer(csv_buffer)
+                    writer.writerows(summary_rows)
+                    zip_file.writestr("batch_summary.csv", csv_buffer.getvalue())
 
-            st.success("Batch Processing Complete!")
-            st.download_button(
-                label="📦 Download Batch Results ZIP",
-                data=zip_buffer.getvalue(),
-                file_name=f"ATS_Batch_Applications_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-                mime="application/zip",
-                use_container_width=True
-            )
+                st.success("Batch Processing Complete!")
+                st.download_button(
+                    label="📦 Download Batch Results ZIP",
+                    data=zip_buffer.getvalue(),
+                    file_name=f"ATS_Batch_Applications_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                    mime="application/zip",
+                    use_container_width=True
+                )
+            except Exception as ex:
+                st.error(f"Batch Execution Error: {str(ex)}")
