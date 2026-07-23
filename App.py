@@ -1,10 +1,29 @@
 """
 =====================================================================
- ADVANCED ATS RESUME AUTOMATOR  v4 — BATCH MODE + COVER LETTERS
+ ADVANCED ATS RESUME AUTOMATOR  v4.1 — BATCH MODE + COVER LETTERS
  (Streamlit + OpenAI-compatible APIs + python-docx)
 =====================================================================
  Developed by Noman Belim
 =====================================================================
+ WHAT'S NEW IN v4.1  (BUGFIX)
+ - FIXED: "locked" facts (name, headline, contact line / address /
+   phone / email, job titles, company names, dates, education,
+   skill category names & order, bullet counts per job) could still
+   get silently rewritten by the AI during tailoring, even though
+   the prompt told it not to. Small/free models in particular would
+   occasionally "helpfully" change a city, normalize a phone number,
+   or otherwise alter locked facts.
+   Prompt instructions alone are not reliable enforcement for an
+   LLM, so this version adds a deterministic, code-level step
+   (`enforce_locked_fields`) that runs AFTER every tailoring call
+   and force-overwrites every locked field with the value from the
+   originally-parsed profile — before the docx is ever built. The
+   AI's output is only trusted for what is genuinely editable
+   (summary wording, skill items inside existing categories, and
+   bullet wording). This makes it IMPOSSIBLE for a tailored resume
+   to end up with a different address, phone number, job title,
+   company, date, or education line than the original resume.
+
  WHAT'S NEW IN v4
  - BATCH MODE: process many job descriptions in a single run instead
    of one at a time. Paste several JDs separated by a marker line, or
@@ -109,7 +128,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
 # APP METADATA / CREDIT
 # ---------------------------------------------------------------
 APP_AUTHOR = "Noman Belim"
-APP_VERSION = "v4"
+APP_VERSION = "v4.1"
 
 # ---------------------------------------------------------------
 # BATCH MODE — line used to separate multiple pasted JDs in one
@@ -503,6 +522,10 @@ Rules:
 - Copy job titles, company names, dates, education, and certifications EXACTLY as written.
 - Keep every bullet point of every job.
 - "contact_line" = location | phone | email | linkedin joined with " | ".
+- Copy the location, phone number, email, and linkedin URL in "contact_line" EXACTLY
+  character-for-character as they appear in the resume text — do not normalize, correct,
+  "fix", abbreviate, expand, or infer a different city/state/area code. If something looks
+  unusual, copy it exactly anyway.
 - "education" = one string per degree/certification line.
 
 RESUME TEXT:
@@ -596,6 +619,10 @@ input profile, PLUS these extra top-level keys:
 Note: keyword coverage percentage is calculated separately in code after you respond —
 you do not need to compute or report it yourself.
 
+Note: even though you are told to copy LOCKED fields through unchanged, the application
+will ALSO re-apply the original LOCKED field values in code after you respond, as a
+safety net — so focus your effort on the EDITABLE content (summary, skill items, bullets).
+
 (A) CANDIDATE PROFILE JSON:
 {profile_json}
 
@@ -636,6 +663,107 @@ def tailor_profile(keys: dict, gemini_key_pool: list, profile: dict, jd_text: st
         jd_text=jd_text[:15000],
     )
     return call_ai_json(keys, gemini_key_pool, prompt)
+
+
+# ---------------------------------------------------------------
+# 4a. LOCKED-FIELD ENFORCEMENT  ***THE FIX***
+#     The prompt above ASKS the AI to leave certain fields (name,
+#     headline, contact_line/address/phone/email, job titles,
+#     company names, dates, education, skill category names/order,
+#     bullet counts) completely unchanged. But an instruction in a
+#     prompt is not a guarantee — small/free models in particular
+#     will sometimes "helpfully" rewrite, normalize, or hallucinate
+#     a replacement value for one of these fields (this is exactly
+#     how a real address like "Phoenix, USA" can silently turn into
+#     a wrong city/state in a tailored resume).
+#
+#     This function is a deterministic, code-level safety net that
+#     runs AFTER every AI tailoring call. It throws away whatever
+#     the AI produced for every LOCKED field and replaces it with
+#     the value from the ORIGINAL parsed profile — the same profile
+#     object that was parsed once from the candidate's real resume
+#     and cached to _profile.json. Only the fields that are actually
+#     supposed to be editable (summary wording, skill items inside
+#     existing categories, and bullet wording) are kept from the
+#     AI's tailored output.
+#
+#     Net effect: no matter what the AI does, the name, address,
+#     phone, email, LinkedIn, job titles, companies, employment
+#     dates, and education on every tailored resume are GUARANTEED
+#     to be byte-for-byte identical to the original resume.
+# ---------------------------------------------------------------
+def enforce_locked_fields(original_profile: dict, tailored_profile: dict) -> dict:
+    """
+    Re-applies every LOCKED field from the original parsed profile onto the
+    AI's tailored output. Returns a new dict; does not mutate the inputs.
+    Any top-level keys the AI added (job_title_detected, company_detected,
+    matched_keywords, missing_keywords, gap_analysis, cover_letter) are
+    preserved untouched, since those are not part of the locked-fields list.
+    """
+    result = dict(tailored_profile or {})
+
+    # ---- simple locked scalars: name, headline, contact info ----
+    result["name"] = original_profile.get("name", "")
+    result["headline"] = original_profile.get("headline", "")
+    result["contact_line"] = original_profile.get("contact_line", "")
+
+    # ---- education: locked verbatim, same lines, same order ----
+    result["education"] = list(original_profile.get("education", []) or [])
+
+    # ---- skills: lock category names + their order; keep the AI's
+    #      rewritten `items` string for that same category (matched
+    #      by position first, falling back to a case-insensitive
+    #      category-name match, falling back to the original items
+    #      if the AI dropped that category entirely) ----
+    orig_skills = original_profile.get("skills", []) or []
+    tailored_skills = tailored_profile.get("skills", []) or [] if tailored_profile else []
+    locked_skills = []
+    for i, orig_cat in enumerate(orig_skills):
+        category = orig_cat.get("category", "")
+        items = orig_cat.get("items", "")
+        if i < len(tailored_skills) and isinstance(tailored_skills[i], dict):
+            items = tailored_skills[i].get("items", items)
+        else:
+            match = next(
+                (s for s in tailored_skills
+                 if isinstance(s, dict)
+                 and s.get("category", "").strip().lower() == category.strip().lower()),
+                None,
+            )
+            if match:
+                items = match.get("items", items)
+        locked_skills.append({"category": category, "items": items})
+    result["skills"] = locked_skills
+
+    # ---- experience: lock title / company / dates / bullet COUNT
+    #      per job; keep the AI's rewritten bullet wording, but pad
+    #      or trim it back to the ORIGINAL number of bullets so
+    #      nothing is silently added or dropped ----
+    orig_exp = original_profile.get("experience", []) or []
+    tailored_exp = tailored_profile.get("experience", []) or [] if tailored_profile else []
+    locked_exp = []
+    for i, orig_job in enumerate(orig_exp):
+        title = orig_job.get("title", "")
+        company = orig_job.get("company", "")
+        dates = orig_job.get("dates", "")
+        orig_bullets = orig_job.get("bullets", []) or []
+
+        tailored_job = tailored_exp[i] if i < len(tailored_exp) and isinstance(tailored_exp[i], dict) else {}
+        tailored_bullets = tailored_job.get("bullets", []) or []
+
+        bullets = []
+        for j in range(len(orig_bullets)):
+            bullets.append(tailored_bullets[j] if j < len(tailored_bullets) and tailored_bullets[j] else orig_bullets[j])
+
+        locked_exp.append({
+            "title": title,
+            "company": company,
+            "dates": dates,
+            "bullets": bullets,
+        })
+    result["experience"] = locked_exp
+
+    return result
 
 
 # ---------------------------------------------------------------
@@ -1187,6 +1315,10 @@ if generate:
                 st.write(f"　↳ {n}")
             st.write(f"　↳ generated via **{provider_used}**")
 
+            st.write("🔒 Locking real candidate facts (name, address, phone/email, "
+                     "job titles, companies, dates, education)…")
+            tailored = enforce_locked_fields(profile, tailored)
+
             st.write("📊 Calculating real keyword coverage (code-level, not AI-reported)…")
             coverage_pct, matched_kws, missing_kws = calculate_keyword_coverage(jd_text, tailored)
             st.write(f"　↳ {coverage_pct}% of top JD keywords found in the tailored resume")
@@ -1383,6 +1515,12 @@ if generate_batch:
                     keys, gemini_key_pool, profile, jd_clean,
                     include_cover_letter=include_cover_letter,
                 )
+                # Deterministic safety net: overwrite any locked field the AI
+                # may have altered (name, contact/address, job titles,
+                # companies, dates, education, skill categories/order,
+                # bullet counts) with the original candidate's real values.
+                tailored = enforce_locked_fields(profile, tailored)
+
                 coverage_pct, matched_kws, missing_kws = calculate_keyword_coverage(jd_clean, tailored)
 
                 company_for_jd = forced_company or tailored.get("company_detected", "Company") or "Company"
